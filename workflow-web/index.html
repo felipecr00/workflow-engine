@@ -13,7 +13,7 @@
       <nav id="tabs">
         <button class="tab active" data-tab="home">Home</button>
         <button class="tab" data-tab="instances">Instances</button>
-        <button class="tab" data-tab="user-tasks">User Tasks</button>
+        <button class="tab" data-tab="tasks">Tasklist</button>
         <button class="tab" data-tab="incidents">Incidents</button>
       </nav>
     </div>
@@ -153,41 +153,101 @@
       </div>
     </div>
 
-    <!-- User Tasks View -->
-    <div id="view-user-tasks" class="view">
-      <div id="user-tasks-toolbar">
-        <div class="toolbar-group">
-          <select id="user-task-state-filter">
-            <option value="">All states</option>
-            <option value="created">Created</option>
-            <option value="claimed">Claimed</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <button id="btn-refresh-user-tasks">Refresh</button>
-        </div>
-      </div>
-      <div id="user-tasks-content">
-        <table id="user-tasks-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Instance</th>
-              <th>Element</th>
-              <th>Task Name</th>
-              <th>Assignee</th>
-              <th>State</th>
-              <th>Created</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="user-tasks-tbody"></tbody>
-        </table>
-        <div id="user-tasks-empty" class="empty-state">No user tasks found</div>
+    <!-- Tasks Workspace View -->
+    <div id="view-tasks" class="view">
+      <div id="tasks-layout">
+
+        <!-- ── Left sidebar: All Tasks Open ── -->
+        <aside id="tasks-sidebar" aria-label="Task list">
+          <div class="tasks-sidebar-header">
+            <h2 class="tasks-sidebar-title">All Tasks Open</h2>
+            <div class="tasks-sidebar-actions">
+              <button id="btn-sort-tasks" class="btn-small" type="button"
+                      title="Sort by creation date" aria-haspopup="true" aria-expanded="false">
+                <span class="sort-caret">↓</span>
+                <span id="sort-tasks-label">Newest First</span>
+              </button>
+              <div id="sort-tasks-menu" class="tasks-sort-menu" role="menu" hidden>
+                <button class="tasks-sort-option" role="menuitemradio" data-sort="newest" aria-checked="true" type="button">Newest First</button>
+                <button class="tasks-sort-option" role="menuitemradio" data-sort="oldest" aria-checked="false" type="button">Oldest First</button>
+              </div>
+              <button id="btn-filter-tasks" class="btn-small" type="button" title="Filter tasks">
+                Filters<span id="tasks-filter-count" class="tasks-filter-count" hidden>0</span>
+              </button>
+            </div>
+          </div>
+          <div id="tasks-list" class="tasks-list" role="listbox" aria-label="All tasks" tabindex="0"></div>
+          <div id="tasks-list-loading" class="tasks-loading" hidden>
+            <span class="spinner"></span> Loading tasks…
+          </div>
+          <div id="tasks-list-empty" class="tasks-empty-state" hidden>
+            <div class="tasks-empty-icon">🗒️</div>
+            <div class="tasks-empty-title">No tasks available</div>
+            <div class="tasks-empty-sub">Tasks created by running processes will appear here.</div>
+          </div>
+        </aside>
+
+        <!-- ── Center: Task workspace ── -->
+        <section id="tasks-center" aria-label="Task workspace">
+          <div id="tasks-center-empty" class="tasks-center-empty">
+            <div class="tasks-empty-icon">📋</div>
+            <div class="tasks-empty-title">Select a task</div>
+            <div class="tasks-empty-sub">Choose a task from the list to view and complete it.</div>
+          </div>
+
+          <div id="tasks-center-content" class="tasks-center-content" hidden>
+            <div class="tasks-center-header">
+              <div class="tasks-center-process" id="tasks-center-process">—</div>
+              <div class="tasks-center-task" id="tasks-center-task">—</div>
+            </div>
+
+            <div class="tasks-tabbar" role="tablist" aria-label="Task views">
+              <button class="tasks-tab active" id="tasks-tab-btn-task"
+                      role="tab" aria-selected="true" aria-controls="tasks-tab-task"
+                      data-task-tab="task" type="button">Task</button>
+              <button class="tasks-tab" id="tasks-tab-btn-process"
+                      role="tab" aria-selected="false" aria-controls="tasks-tab-process"
+                      tabindex="-1" data-task-tab="process" type="button">Process</button>
+            </div>
+
+            <div class="tasks-tab-panels">
+              <div id="tasks-tab-task" class="tasks-tab-panel active" role="tabpanel"
+                   aria-labelledby="tasks-tab-btn-task"></div>
+              <div id="tasks-tab-process" class="tasks-tab-panel" role="tabpanel"
+                   aria-labelledby="tasks-tab-btn-process" hidden>
+                <div id="tasks-process-loading" class="tasks-loading" hidden>
+                  <span class="spinner"></span> Loading diagram…
+                </div>
+                <div id="tasks-process-canvas" class="tasks-process-canvas"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Right sidebar: Task information ── -->
+        <aside id="tasks-info" class="tasks-info" aria-label="Task information">
+          <div id="tasks-info-empty" class="tasks-info-empty">
+            <div class="tasks-empty-icon">ℹ️</div>
+            <div class="tasks-empty-sub">Task details will appear here.</div>
+          </div>
+          <div id="tasks-info-content" hidden></div>
+        </aside>
+
       </div>
     </div>
 
-    <!-- User Task Action Modal -->
+    <!-- Tasks Filter Modal -->
+    <div id="tasks-filter-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tasks-filter-title">
+        <div class="modal-header">
+          <h3 id="tasks-filter-title">Apply Filters</h3>
+          <button id="tasks-filter-close" class="btn-small" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div id="tasks-filter-body"></div>
+      </div>
+    </div>
+
+    <!-- Shared Action Modal (Start Instance, etc.) -->
     <div id="user-task-modal" class="modal-backdrop" style="display:none;">
       <div class="modal">
         <div class="modal-header">

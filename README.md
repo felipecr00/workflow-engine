@@ -24,10 +24,27 @@ The web UI can be served two ways:
 
 - **Node.js ≥ 20** (`node -v`)
 - **npm** (bundled with Node) — or pnpm/yarn if you prefer.
-- **Docker** + **Docker Compose** (for the local Postgres database).
+- **PostgreSQL ≥ 14** running locally (16 recommended). No Docker required.
 
-> If you already have a Postgres 16 instance you want to use, you can skip
-> Docker and just point `DATABASE_URL` at it. See [Environment variables](#5-environment-variables).
+Install PostgreSQL natively:
+
+```bash
+# macOS (Homebrew)
+brew install postgresql@16
+brew services start postgresql@16        # starts the server on :5432
+
+# Debian / Ubuntu
+sudo apt-get update && sudo apt-get install -y postgresql
+sudo systemctl enable --now postgresql
+
+# Windows
+# Download the installer from https://www.postgresql.org/download/windows/
+# and start the "postgresql" service it registers.
+```
+
+> Already have a Postgres instance elsewhere? Skip the install and just point
+> `DATABASE_URL` (and, for first-time creation, `ADMIN_DATABASE_URL`) at it.
+> See [Environment variables](#5-environment-variables).
 
 ---
 
@@ -40,8 +57,8 @@ From the repository root:
 cd workflow-core
 npm install
 
-# 2. Start Postgres (detached)
-docker compose up -d postgres
+# 2. Create the `workflow` role + database on your local Postgres
+npm run db:setup
 
 # 3. Apply database migrations
 npm run migrate
@@ -51,10 +68,12 @@ cd ../workflow-web
 npm install
 ```
 
+> Steps 2–3 can be combined with `npm run setup`.
+
 You should now have:
 
-- A Postgres container exposing `localhost:5432` with database `workflow`
-  (user `workflow`, password `workflow`).
+- A `workflow` database on `localhost:5432` owned by role `workflow`
+  (password `workflow`).
 - Migrated schema with all tables (`process_definitions`, `process_instances`,
   `tokens`, `jobs`, `timers`, `incidents`, `user_tasks`, `folders`, `projects`, …).
 
@@ -113,9 +132,8 @@ npm run build                       # output: workflow-core/dist/
 # 3. Tell the engine where the web bundle lives
 export WEB_DIST_DIR=$(pwd)/../workflow-web/dist
 
-# 4. Make sure Postgres is up and migrated
-docker compose up -d postgres
-npm run migrate
+# 4. Make sure the database exists and is migrated
+npm run setup                       # db:setup + migrate (idempotent)
 
 # 5. Start the server
 npm start
@@ -135,6 +153,7 @@ and [workflow-core/src/server/index.ts](workflow-core/src/server/index.ts)).
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgres://workflow:workflow@localhost:5432/workflow` | Postgres connection string. |
+| `ADMIN_DATABASE_URL` | `postgres://<os-user>@localhost:5432/postgres` | Superuser connection used **only** by `npm run db:setup` to create the role/database. |
 | `PORT` | `3000` | HTTP listen port. |
 | `HOST` | `0.0.0.0` | HTTP bind address. |
 | `JOB_POLL_INTERVAL_MS` | `250` | Scheduler tick interval. |
@@ -182,8 +201,7 @@ same one as dev).
 
 ```bash
 cd workflow-core
-docker compose up -d postgres       # if not already running
-npm run migrate                     # if not already migrated
+npm run setup                       # db:setup + migrate, if not already done
 npm test                            # one-shot
 npm run test:watch                  # watch mode
 npm run typecheck                   # tsc --noEmit
@@ -200,7 +218,8 @@ incidents, user tasks, migrations, and restart recovery — see
 ```text
 workflow-engine/
 ├── workflow-core/                    # Engine + REST API
-│   ├── docker-compose.yml            # Postgres 16
+│   ├── .env.example                  # Configuration reference (Docker-free)
+│   ├── scripts/setup-db.sh           # Native Postgres bootstrap (psql)
 │   ├── migrations/                   # SQL migrations
 │   ├── examples/processes/           # Sample BPMN files
 │   ├── src/
@@ -221,7 +240,9 @@ workflow-engine/
 
 ## 9. Common issues
 
-- **`ECONNREFUSED 127.0.0.1:5432`** — Postgres isn't running. `docker compose up -d postgres` from inside [workflow-core](workflow-core).
+- **`ECONNREFUSED 127.0.0.1:5432`** — Postgres isn't running. Start it (`brew services start postgresql@16` on macOS, `sudo systemctl start postgresql` on Linux).
+- **`role "workflow" does not exist` / `database "workflow" does not exist`** — Run `npm run db:setup` inside [workflow-core](workflow-core).
+- **`db:setup` can't connect as admin** — Your OS user may not be a Postgres superuser. Point it at one: `ADMIN_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm run db:setup`.
 - **`relation "process_definitions" does not exist`** — Migrations weren't applied. `npm run migrate` inside [workflow-core](workflow-core).
 - **UI shows blank page at `/modeler/`** — In production, confirm `WEB_DIST_DIR` is set and the folder contains `index.html`. In dev, hit the Vite URL `http://localhost:5173/modeler/`, not the engine port.
 - **CORS errors in dev** — Don't call the engine directly from the browser on `:3000`; let the Vite proxy handle it. The proxied paths are listed in [workflow-web/vite.config.ts](workflow-web/vite.config.ts).

@@ -1,14 +1,22 @@
-import type { Pool } from "pg";
-import type { Kysely } from "kysely";
-import { createDbClient, type DbClient } from "./db/client";
-import type { Database } from "./db/types";
-import { runMigrations } from "./db/migrator";
-import { advanceToken, completeUserTaskAction, lockInstance } from "./execution/executor";
-import { HandlerRegistry, type JobHandler } from "./execution/handler-registry";
-import { Scheduler } from "./execution/scheduler";
-import { parseProcess } from "./parser/parser";
-import type { InternalProcessDefinition } from "./parser/types";
-import { recordAudit, listAuditForInstance, type AuditEventRow } from "./repository/audit";
+import type { Pool } from 'pg';
+import type { Kysely } from 'kysely';
+import { createDbClient, type DbClient } from './db/client';
+import type { Database } from './db/types';
+import { runMigrations } from './db/migrator';
+import {
+  advanceToken,
+  completeUserTaskAction,
+  lockInstance,
+} from './execution/executor';
+import { HandlerRegistry, type JobHandler } from './execution/handler-registry';
+import { Scheduler } from './execution/scheduler';
+import { parseProcess } from './parser/parser';
+import type { InternalProcessDefinition } from './parser/types';
+import {
+  recordAudit,
+  listAuditForInstance,
+  type AuditEventRow,
+} from './repository/audit';
 import {
   findDefinitionById,
   findDefinitionByKeyAndVersion,
@@ -17,29 +25,33 @@ import {
   listActiveDefinitions,
   listDefinitionVersions,
   type DeployedDefinitionRow,
-} from "./repository/definitions";
+} from './repository/definitions';
 import {
   createInstance,
   findInstance,
   listInstances,
   updateInstanceDefinition,
   type ProcessInstanceRow,
-} from "./repository/instances";
+} from './repository/instances';
 import {
   findIncident,
   listIncidents,
   listIncidentsForInstance,
   markIncidentResolved,
   type IncidentRow,
-} from "./repository/incidents";
+} from './repository/incidents';
 import {
   findJob,
   listJobsForInstance,
   reactivateJobForResolve,
   remapJobElement,
   type JobRow,
-} from "./repository/jobs";
-import { listTimersForInstance, remapTimerElement, type TimerRow } from "./repository/timers";
+} from './repository/jobs';
+import {
+  listTimersForInstance,
+  remapTimerElement,
+  type TimerRow,
+} from './repository/timers';
 import {
   cancelUserTask,
   claimUserTask,
@@ -47,7 +59,7 @@ import {
   listUserTasks,
   listUserTasksForInstance,
   type UserTaskRow,
-} from "./repository/user-tasks";
+} from './repository/user-tasks';
 import {
   createToken,
   listAllTokensForInstance,
@@ -55,7 +67,7 @@ import {
   remapTokenElement,
   setTokenState,
   type TokenRow,
-} from "./repository/tokens";
+} from './repository/tokens';
 
 export interface MigrateInstanceParams {
   instanceId: string;
@@ -97,6 +109,7 @@ export interface CreateInstanceResult {
   definitionId: string;
   definitionKey: string;
   definitionVersion: number;
+  definitionName: string | null;
   state: string;
 }
 
@@ -105,6 +118,7 @@ export interface InstanceSnapshot {
   definitionId: string;
   definitionKey: string;
   definitionVersion: number;
+  definitionName: string | null;
   state: string;
   variables: Record<string, unknown>;
   createdAt: Date;
@@ -144,12 +158,14 @@ export class Engine {
   constructor(private readonly options: EngineOptions) {}
 
   get db(): Kysely<Database> {
-    if (!this.client) throw new Error("Engine not started — call engine.start() first");
+    if (!this.client)
+      throw new Error('Engine not started — call engine.start() first');
     return this.client.db;
   }
 
   get pool(): Pool {
-    if (!this.client) throw new Error("Engine not started — call engine.start() first");
+    if (!this.client)
+      throw new Error('Engine not started — call engine.start() first');
     return this.client.pool;
   }
 
@@ -200,14 +216,17 @@ export class Engine {
   }
 
   async runOneTick(): Promise<{ jobs: number; timers: number }> {
-    if (!this.scheduler) throw new Error("Engine not started");
+    if (!this.scheduler) throw new Error('Engine not started');
     return await this.scheduler.tick();
   }
 
   async deploy(bpmnXml: string, name?: string | null): Promise<DeployResult> {
     const parsed = await parseProcess(bpmnXml);
     for (const el of parsed.elements.values()) {
-      if (el.type === "serviceTask" && !this.handlers.has(el.taskDefinition.type)) {
+      if (
+        el.type === 'serviceTask' &&
+        !this.handlers.has(el.taskDefinition.type)
+      ) {
         throw new Error(
           `Cannot deploy ${parsed.key}: no handler registered for task type "${el.taskDefinition.type}"`,
         );
@@ -252,11 +271,12 @@ export class Engine {
         definitionId: def.id,
         definitionKey: def.key,
         definitionVersion: def.version,
+        definitionName: def.name,
         variables,
       });
       await recordAudit(trx, {
         instanceId: instance.id,
-        eventType: "INSTANCE_CREATED",
+        eventType: 'INSTANCE_CREATED',
         metadata: { definitionKey: def.key, definitionVersion: def.version },
       });
 
@@ -268,7 +288,7 @@ export class Engine {
       await recordAudit(trx, {
         instanceId: instance.id,
         tokenId: token.id,
-        eventType: "TOKEN_CREATED",
+        eventType: 'TOKEN_CREATED',
         elementId: startElement.id,
         elementType: startElement.type,
       });
@@ -282,6 +302,7 @@ export class Engine {
       definitionId: result.definition_id,
       definitionKey: result.definition_key,
       definitionVersion: result.definition_version,
+      definitionName: result.definition_name,
       state: result.state,
     };
   }
@@ -289,21 +310,32 @@ export class Engine {
   async getInstance(id: string): Promise<InstanceSnapshot | null> {
     const instance = await findInstance(this.db, id);
     if (!instance) return null;
-    const [tokens, jobs, timers, userTasks, incidents, audit] = await Promise.all([
-      listAllTokensForInstance(this.db, id),
-      listJobsForInstance(this.db, id),
-      listTimersForInstance(this.db, id),
-      listUserTasksForInstance(this.db, id),
-      listIncidentsForInstance(this.db, id),
-      listAuditForInstance(this.db, id),
-    ]);
-    return snapshotFromRow(instance, tokens, jobs, timers, userTasks, incidents, audit);
+    const [tokens, jobs, timers, userTasks, incidents, audit] =
+      await Promise.all([
+        listAllTokensForInstance(this.db, id),
+        listJobsForInstance(this.db, id),
+        listTimersForInstance(this.db, id),
+        listUserTasksForInstance(this.db, id),
+        listIncidentsForInstance(this.db, id),
+        listAuditForInstance(this.db, id),
+      ]);
+    return snapshotFromRow(
+      instance,
+      tokens,
+      jobs,
+      timers,
+      userTasks,
+      incidents,
+      audit,
+    );
   }
 
-  async listInstances(filter: {
-    state?: string;
-    definitionKey?: string;
-  } = {}): Promise<ProcessInstanceRow[]> {
+  async listInstances(
+    filter: {
+      state?: string;
+      definitionKey?: string;
+    } = {},
+  ): Promise<ProcessInstanceRow[]> {
     return await listInstances(this.db, {
       state: filter.state as any,
       definitionKey: filter.definitionKey,
@@ -322,13 +354,15 @@ export class Engine {
     return await listDefinitionVersions(this.db, key);
   }
 
-  async listIncidents(filter: {
-    instanceId?: string;
-    activeOnly?: boolean;
-  } = {}): Promise<IncidentRow[]> {
+  async listIncidents(
+    filter: {
+      instanceId?: string;
+      activeOnly?: boolean;
+    } = {},
+  ): Promise<IncidentRow[]> {
     return await listIncidents(this.db, {
       instanceId: filter.instanceId,
-      state: filter.activeOnly === false ? undefined : "active",
+      state: filter.activeOnly === false ? undefined : 'active',
     });
   }
 
@@ -341,7 +375,7 @@ export class Engine {
       if (!incident) {
         throw new Error(`Incident ${incidentId} not found`);
       }
-      if (incident.state === "resolved") {
+      if (incident.state === 'resolved') {
         return;
       }
       await lockInstance(trx, incident.instance_id);
@@ -351,7 +385,7 @@ export class Engine {
         tokenId: incident.token_id,
         jobId: incident.job_id,
         incidentId: incident.id,
-        eventType: "INCIDENT_RESOLVED",
+        eventType: 'INCIDENT_RESOLVED',
         metadata: { resolvedBy },
       });
 
@@ -360,17 +394,19 @@ export class Engine {
         if (job) {
           await reactivateJobForResolve(trx, job.id);
           if (incident.token_id) {
-            await setTokenState(trx, incident.token_id, "waiting");
+            await setTokenState(trx, incident.token_id, 'waiting');
           }
         }
       }
     });
   }
-  async listUserTasks(filter: {
-    instanceId?: string;
-    state?: string;
-    assignee?: string;
-  } = {}): Promise<UserTaskRow[]> {
+  async listUserTasks(
+    filter: {
+      instanceId?: string;
+      state?: string;
+      assignee?: string;
+    } = {},
+  ): Promise<UserTaskRow[]> {
     return await listUserTasks(this.db, {
       instanceId: filter.instanceId,
       state: filter.state as any,
@@ -381,14 +417,14 @@ export class Engine {
   async claimUserTask(userTaskId: string, claimedBy: string): Promise<void> {
     const task = await findUserTask(this.db, userTaskId);
     if (!task) throw new Error(`User task ${userTaskId} not found`);
-    if (task.state !== "created" && task.state !== "claimed") {
+    if (task.state !== 'created' && task.state !== 'claimed') {
       throw new Error(`Cannot claim user task in state "${task.state}"`);
     }
     await claimUserTask(this.db, userTaskId, claimedBy);
     await recordAudit(this.db, {
       instanceId: task.instance_id,
       tokenId: task.token_id,
-      eventType: "USER_TASK_CLAIMED",
+      eventType: 'USER_TASK_CLAIMED',
       elementId: task.element_id,
       metadata: { userTaskId, claimedBy },
     });
@@ -409,21 +445,23 @@ export class Engine {
   async cancelUserTask(userTaskId: string): Promise<void> {
     const task = await findUserTask(this.db, userTaskId);
     if (!task) throw new Error(`User task ${userTaskId} not found`);
-    if (task.state !== "created" && task.state !== "claimed") {
+    if (task.state !== 'created' && task.state !== 'claimed') {
       throw new Error(`Cannot cancel user task in state "${task.state}"`);
     }
     await cancelUserTask(this.db, userTaskId);
-    await setTokenState(this.db, task.token_id, "active");
+    await setTokenState(this.db, task.token_id, 'active');
     await recordAudit(this.db, {
       instanceId: task.instance_id,
       tokenId: task.token_id,
-      eventType: "USER_TASK_CANCELLED",
+      eventType: 'USER_TASK_CANCELLED',
       elementId: task.element_id,
       metadata: { userTaskId },
     });
   }
 
-  async migrateInstance(params: MigrateInstanceParams): Promise<MigrateInstanceResult> {
+  async migrateInstance(
+    params: MigrateInstanceParams,
+  ): Promise<MigrateInstanceResult> {
     const targetDef = await findDefinitionByKeyAndVersion(
       this.db,
       params.targetDefinitionKey,
@@ -448,18 +486,19 @@ export class Engine {
       if (!instance) {
         throw new Error(`Instance ${params.instanceId} not found`);
       }
-      if (instance.state !== "active") {
+      if (instance.state !== 'active') {
         throw new Error(
           `Cannot migrate instance in state "${instance.state}" — only active instances can be migrated`,
         );
       }
-      if (
-        instance.definition_id === targetDef.id
-      ) {
-        throw new Error("Instance is already on the target definition version");
+      if (instance.definition_id === targetDef.id) {
+        throw new Error('Instance is already on the target definition version');
       }
 
-      const liveTokens = await listLiveTokensForInstance(trx, params.instanceId);
+      const liveTokens = await listLiveTokensForInstance(
+        trx,
+        params.instanceId,
+      );
 
       const unmapped: string[] = [];
       for (const token of liveTokens) {
@@ -477,7 +516,9 @@ export class Engine {
       if (unmapped.length > 0) {
         const unique = [...new Set(unmapped)];
         throw new Error(
-          `Element mapping is incomplete — unmapped live elements: ${unique.join(", ")}`,
+          `Element mapping is incomplete — unmapped live elements: ${unique.join(
+            ', ',
+          )}`,
         );
       }
 
@@ -492,7 +533,7 @@ export class Engine {
       const jobs = await listJobsForInstance(trx, params.instanceId);
       let jobsMigrated = 0;
       for (const job of jobs) {
-        if (job.state === "completed" || job.state === "incident") continue;
+        if (job.state === 'completed' || job.state === 'incident') continue;
         const newElementId = params.elementMapping[job.element_id];
         if (newElementId) {
           await remapJobElement(trx, job.id, newElementId);
@@ -503,7 +544,7 @@ export class Engine {
       const timers = await listTimersForInstance(trx, params.instanceId);
       let timersMigrated = 0;
       for (const timer of timers) {
-        if (timer.state !== "active") continue;
+        if (timer.state !== 'active') continue;
         const newElementId = params.elementMapping[timer.element_id];
         if (newElementId) {
           await remapTimerElement(trx, timer.id, newElementId);
@@ -522,7 +563,7 @@ export class Engine {
 
       await recordAudit(trx, {
         instanceId: params.instanceId,
-        eventType: "INSTANCE_MIGRATED",
+        eventType: 'INSTANCE_MIGRATED',
         metadata: {
           previousDefinitionId: prevDefId,
           previousVersion: prevVersion,
@@ -565,6 +606,7 @@ function snapshotFromRow(
     definitionId: row.definition_id,
     definitionKey: row.definition_key,
     definitionVersion: row.definition_version,
+    definitionName: row.definition_name,
     state: row.state,
     variables: row.variables,
     createdAt: row.created_at,

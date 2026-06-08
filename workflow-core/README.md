@@ -42,14 +42,17 @@ implements **Phases 1–2**.
 ## Requirements
 
 - Node.js ≥ 20
-- Docker (for Postgres) — or a local Postgres reachable at the configured URL.
+- PostgreSQL ≥ 14 (16 recommended) running locally — no Docker required.
+  macOS: `brew install postgresql@16 && brew services start postgresql@16`.
+  Linux: `sudo apt-get install -y postgresql && sudo systemctl enable --now postgresql`.
 
 ## Setup
 
 ```bash
 npm install
-docker compose up -d postgres
-npm run migrate
+npm run db:setup   # create the `workflow` role + database (idempotent)
+npm run migrate    # apply SQL migrations
+# shortcut: npm run setup  == db:setup + migrate
 ```
 
 ## Running the server
@@ -65,6 +68,8 @@ Listens on `:3000`; polls jobs and timers every 250 ms by default.
 Environment variables:
 
 - `DATABASE_URL` (default `postgres://workflow:workflow@localhost:5432/workflow`)
+- `ADMIN_DATABASE_URL` (used only by `npm run db:setup`; defaults to your OS
+  superuser on `localhost:5432/postgres`)
 - `JOB_POLL_INTERVAL_MS` (default `250`)
 - `JOB_BATCH_SIZE` (default `16`)
 - `PORT` (default `3000`)
@@ -158,7 +163,7 @@ To recover from an incident, an operator typically:
 ## Tests
 
 ```bash
-docker compose up -d postgres
+npm run setup   # db:setup + migrate, if not already done
 npm test
 ```
 
