@@ -1,0 +1,24 @@
+{
+  "name": "workflow-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BPMN modeler and operations UI (Vite + bpmn-js).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "bpmn-js": "^17.11.1",
+    "bpmn-js-properties-panel": "^5.24.0",
+    "@bpmn-io/properties-panel": "^3.23.0",
+    "bpmn-moddle": "^9.0.1",
+    "diagram-js": "^14.11.1",
+    "min-dash": "^4.2.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.4.0"
+  }
+}

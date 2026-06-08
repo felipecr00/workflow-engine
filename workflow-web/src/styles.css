@@ -1,0 +1,773 @@
+/* ══════════════════════════════════════════════════════════════
+   ScotiAgents Design System — Workflow Engine
+   Camunda Modeler Visual IDE essence + Scotiabank red branding
+   ══════════════════════════════════════════════════════════════ */
+
+/* IBM Plex Sans + Mono (design system font) */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+/* ── Design Tokens (CSS Custom Properties) ─────────────────── */
+:root {
+  /* Primary — Scotiabank Red */
+  --color-primary:          #dc2626;
+  --color-primary-light:    #ef4444;
+  --color-primary-dark:     #b91c1c;
+  --color-primary-contrast: #ffffff;
+
+  /* Secondary — Purple */
+  --color-secondary:        #7c3aed;
+  --color-secondary-light:  #8b5cf6;
+  --color-secondary-dark:   #6d28d9;
+
+  /* Semantic */
+  --color-success:          #16a34a;
+  --color-success-light:    #22c55e;
+  --color-warning:          #d97706;
+  --color-warning-light:    #f59e0b;
+  --color-error:            #dc2626;
+  --color-error-light:      #ef4444;
+
+  /* Link */
+  --color-link:             #2563eb;
+
+  /* Backgrounds */
+  --bg-default:             #ffffff;
+  --bg-paper:               #ffffff;
+  --bg-toolbar:             #f9fafb;
+  --bg-subtle:              #f3f4f6;
+
+  /* Text */
+  --text-primary:           #111827;
+  --text-secondary:         #6b7280;
+  --text-tertiary:          #9ca3af;
+
+  /* Borders */
+  --divider:                #e5e7eb;
+  --divider-light:          #f3f4f6;
+
+  /* Shape */
+  --radius-default:         4px;
+  --radius-button:          6px;
+  --radius-card:            8px;
+  --radius-dialog:          12px;
+  --radius-pill:            9999px;
+
+  /* Typography */
+  --font-ui:    'IBM Plex Sans', Arial, Helvetica, sans-serif;
+  --font-mono:  'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Shadows */
+  --shadow-hover:   0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-modal:   0 20px 40px -4px rgb(0 0 0 / 0.15), 0 8px 16px -6px rgb(0 0 0 / 0.1);
+
+  /* Layout */
+  --header-height:    40px;
+  --status-bar-height: 28px;
+}
+
+/* ── Reset ──────────────────────────────────────────────────── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-default);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Top Bar (Camunda-style: white, breadcrumb, flat) ──────── */
+#header {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--bg-paper);
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-primary);
+  flex-shrink: 0;
+  z-index: 10;
+  height: var(--header-height);
+  gap: 24px;
+}
+
+.header-title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--color-primary);
+}
+
+/* ── Mode Tabs (Camunda-style: text-only, bottom-border) ───── */
+#tabs {
+  display: flex;
+  gap: 0;
+  height: 100%;
+}
+
+.tab {
+  padding: 0 16px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s, font-weight 0.15s;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  background: transparent;
+  border-color: transparent;
+  border-bottom: 2px solid var(--divider);
+}
+
+.tab.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  border-bottom-color: var(--color-primary);
+}
+
+/* ── Views ──────────────────────────────────────────────────── */
+.view { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.view.active { display: flex; }
+
+/* ── Toolbars (barely-grey, thin bottom border) ────────────── */
+#modeler-toolbar,
+#instances-toolbar,
+#incidents-toolbar,
+#user-tasks-toolbar,
+#home-toolbar,
+#detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Buttons (flat, no elevation, Camunda-conservative) ────── */
+button, .toolbar-btn, select {
+  padding: 6px 16px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-button);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  text-transform: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+button:hover, .toolbar-btn:hover {
+  background: var(--bg-subtle);
+  border-color: var(--text-tertiary);
+}
+
+select {
+  font-weight: 500;
+  padding-right: 28px;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border-color: var(--color-primary);
+}
+.btn-primary:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary-light);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+.btn-danger:hover {
+  background: #fef2f2;
+}
+
+.btn-success {
+  background: var(--color-success);
+  color: #fff;
+  border-color: var(--color-success);
+}
+.btn-success:hover {
+  background: var(--color-success-light);
+  border-color: var(--color-success-light);
+}
+
+.btn-small {
+  padding: 4px 12px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* ── Canvas containers (pure white workspace) ──────────────── */
+#canvas-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+#canvas {
+  flex: 1;
+  position: relative;
+  background: var(--bg-default);
+}
+
+/* Right properties panel (Camunda-style: white, thin left border) */
+#properties-panel {
+  width: 320px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: var(--bg-paper);
+  border-left: 1px solid var(--divider);
+}
+
+/* ── Instance detail — metadata bar (light, not dark) ──────── */
+#detail-meta-bar {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  gap: 24px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meta-item:last-child {
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+}
+
+.meta-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+}
+
+.meta-value {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.meta-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+#detail-meta-bar .btn-small {
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  border-color: var(--divider);
+}
+
+#detail-meta-bar .btn-small:hover {
+  background: var(--bg-subtle);
+}
+
+/* ── Diagram area ──────────────────────────────────────────── */
+#detail-diagram-area {
+  flex: 1;
+  position: relative;
+  min-height: 250px;
+  border-bottom: 1px solid var(--divider);
+}
+
+#detail-canvas {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  background: var(--bg-default);
+}
+
+/* ── Bottom panel — history + variables (light theme) ──────── */
+#detail-bottom-panel {
+  display: flex;
+  height: 260px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--divider);
+  overflow: hidden;
+}
+
+#detail-history-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--divider);
+}
+
+#detail-variables-panel {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Panel headers (Camunda section header style) */
+.panel-header {
+  padding: 8px 12px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+/* History tree — light background */
+#detail-history-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  font-size: 0.8125rem;
+  background: var(--bg-paper);
+  color: var(--text-primary);
+}
+
+/* Variables panel — light background */
+#detail-variables-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  background: var(--bg-paper);
+  color: var(--text-primary);
+}
+
+/* ── History tree items ────────────────────────────────────── */
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  cursor: default;
+}
+
+.history-item:hover { background: var(--bg-subtle); }
+
+.history-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.history-icon-completed { color: var(--color-success); }
+.history-icon-active    { color: var(--color-link); }
+.history-icon-waiting   { color: var(--color-warning); }
+.history-icon-incident  { color: var(--color-error); }
+
+.history-name {
+  flex: 1;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.history-item-indent { padding-left: 32px; }
+
+/* ── BPMN diagram overlays (keep functional colors) ────────── */
+.completed-element :is(.djs-visual) path,
+.completed-element :is(.djs-visual) rect,
+.completed-element :is(.djs-visual) circle,
+.completed-element :is(.djs-visual) polygon {
+  stroke: var(--color-success) !important;
+  fill: rgba(22, 163, 74, 0.06) !important;
+}
+
+.completed-flow :is(.djs-visual) path,
+.completed-flow :is(.djs-visual) polyline {
+  stroke: var(--color-success) !important;
+}
+
+.completed-flow :is(.djs-visual) path[marker-end],
+.completed-flow :is(.djs-visual) polyline[marker-end] {
+  marker-end: url(#sequenceflow-end-green) !important;
+}
+
+.active-element :is(.djs-visual) path,
+.active-element :is(.djs-visual) rect,
+.active-element :is(.djs-visual) circle,
+.active-element :is(.djs-visual) polygon {
+  stroke: var(--color-link) !important;
+  stroke-width: 3px !important;
+  fill: rgba(37, 99, 235, 0.08) !important;
+}
+
+/* ── Variables table ───────────────────────────────────────── */
+.var-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.var-table th, .var-table td {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--divider-light, var(--divider));
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.var-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  position: sticky;
+  top: 0;
+  background: var(--bg-paper);
+}
+
+.var-value {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+/* ── Breadcrumbs (Camunda-style: > chevron separators) ─────── */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8125rem;
+}
+
+.breadcrumbs a {
+  color: var(--color-link);
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.breadcrumbs a:hover { text-decoration: underline; }
+
+.breadcrumbs .separator {
+  color: var(--text-tertiary);
+  margin: 0 2px;
+}
+
+.breadcrumbs .current {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ── Home table icons ──────────────────────────────────────── */
+.item-icon {
+  font-size: 18px;
+  width: 28px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.item-icon-folder  { color: var(--color-warning-light); }
+.item-icon-project { color: var(--color-link); }
+
+.home-item-name {
+  cursor: pointer;
+  color: var(--color-link);
+  font-weight: 500;
+}
+
+.home-item-name:hover { text-decoration: underline; }
+
+/* ── Tables (clean, flat, white backgrounds) ───────────────── */
+#instances-content, #incidents-content, #user-tasks-content, #home-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: var(--bg-default);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 0.8125rem;
+}
+
+th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-toolbar);
+  position: sticky;
+  top: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+tr:hover td { background: var(--bg-subtle); }
+
+.empty-state {
+  display: none;
+  padding: 48px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+
+/* ── State badges (design system semantic colors) ──────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-active     { background: #dcfce7; color: #15803d; }
+.badge-waiting    { background: #fef3c7; color: #92400e; }
+.badge-completed  { background: #dbeafe; color: #1e40af; }
+.badge-incident   { background: #fee2e2; color: var(--color-primary-dark); }
+.badge-failed     { background: #fee2e2; color: var(--color-primary-dark); }
+.badge-pending    { background: #f3e8ff; color: var(--color-secondary-dark); }
+.badge-terminated { background: var(--bg-subtle); color: var(--text-secondary); }
+.badge-resolved   { background: #dbeafe; color: #1e40af; }
+.badge-created    { background: #fef3c7; color: #92400e; }
+.badge-claimed    { background: #f3e8ff; color: var(--color-secondary-dark); }
+.badge-cancelled  { background: var(--bg-subtle); color: var(--text-secondary); }
+
+/* ── Sidebar sections ──────────────────────────────────────── */
+.sidebar-section {
+  margin-bottom: 16px;
+}
+
+.sidebar-section h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.sidebar-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 0.75rem;
+}
+
+.sidebar-row .label { color: var(--text-secondary); }
+.sidebar-row .value { font-weight: 500; word-break: break-all; }
+
+.sidebar-list-item {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: var(--bg-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-default);
+  font-size: 0.75rem;
+}
+
+.sidebar-list-item .item-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+/* Monospace text */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* ── Token overlays (diagram markers) ──────────────────────── */
+.token-overlay {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.token-active, .token-waiting { background: var(--color-success); }
+.token-incident  { background: var(--color-error); }
+.token-completed { background: var(--text-tertiary); }
+
+/* ── Status bar (Camunda bottom bar) ───────────────────────── */
+#status-bar {
+  padding: 4px 16px;
+  background: var(--bg-paper);
+  border-top: 1px solid var(--divider);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  height: var(--status-bar-height);
+  display: flex;
+  align-items: center;
+}
+
+.status-success { color: var(--color-success); }
+.status-error   { color: var(--color-error); }
+
+/* ── Modal (12px radius per design system) ─────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: var(--bg-paper);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-modal);
+  min-width: 380px;
+  max-width: 500px;
+  border: 1px solid var(--divider);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.modal-header h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-body-content {
+  padding: 20px;
+}
+
+.modal-body-content label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.modal-body-content input,
+.modal-body-content textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-default);
+  font-size: 0.875rem;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  background: var(--bg-paper);
+  margin-bottom: 12px;
+  transition: border-color 0.15s;
+}
+
+.modal-body-content input:focus,
+.modal-body-content textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.1);
+}
+
+.modal-body-content textarea {
+  min-height: 80px;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  resize: vertical;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--divider);
+}
+
+/* Action button group in table */
+.action-group {
+  display: flex;
+  gap: 4px;
+}
+
+/* ── bpmn-js overrides ─────────────────────────────────────── */
+.bjs-powered-by { display: none !important; }
+.djs-container { background: var(--bg-default) !important; }
+
+/* Properties panel styling (Camunda flat inputs with visible borders) */
+#properties-panel .bio-properties-panel {
+  font-family: var(--font-ui);
+}
+
+#properties-panel .bio-properties-panel-group-header {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+#properties-panel input,
+#properties-panel select,
+#properties-panel textarea {
+  border-radius: var(--radius-default);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+}

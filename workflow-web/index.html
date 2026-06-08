@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workflow Engine</title>
+  <link rel="stylesheet" href="src/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="header">
+      <span class="header-title">Workflow Engine</span>
+      <nav id="tabs">
+        <button class="tab active" data-tab="home">Home</button>
+        <button class="tab" data-tab="instances">Instances</button>
+        <button class="tab" data-tab="user-tasks">User Tasks</button>
+        <button class="tab" data-tab="incidents">Incidents</button>
+      </nav>
+    </div>
+
+    <!-- Home / Project Browser View -->
+    <div id="view-home" class="view active">
+      <div id="home-toolbar">
+        <div class="toolbar-group">
+          <nav id="breadcrumbs" class="breadcrumbs"></nav>
+        </div>
+        <div class="toolbar-group">
+          <button id="btn-new-folder">New Folder</button>
+          <button id="btn-new-project" class="btn-primary">New Diagram</button>
+        </div>
+      </div>
+      <div id="home-content">
+        <table id="home-table">
+          <thead>
+            <tr>
+              <th style="width:40px;"></th>
+              <th>Name</th>
+              <th>Last Changed</th>
+              <th style="width:80px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="home-tbody"></tbody>
+        </table>
+        <div id="home-empty" class="empty-state">
+          <div style="margin-bottom:12px;">No diagrams yet</div>
+          <button id="btn-new-project-empty" class="btn-primary">Create your first diagram</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modeler View -->
+    <div id="view-modeler" class="view">
+      <div id="modeler-toolbar">
+        <div class="toolbar-group">
+          <button id="btn-back-home">&larr; Home</button>
+          <span id="project-title" style="font-weight:600;font-size:13px;"></span>
+        </div>
+        <div class="toolbar-group">
+          <button id="btn-save" title="Save diagram">Save</button>
+          <label class="toolbar-btn" title="Import BPMN XML">
+            Import
+            <input type="file" id="file-input" accept=".bpmn,.xml" hidden />
+          </label>
+          <button id="btn-export" title="Export BPMN XML">Export</button>
+          <button id="btn-deploy" class="btn-primary" title="Deploy to engine">Deploy</button>
+        </div>
+      </div>
+      <div id="canvas-container">
+        <div id="canvas"></div>
+        <div id="properties-panel"></div>
+      </div>
+    </div>
+
+    <!-- Instances View -->
+    <div id="view-instances" class="view">
+      <div id="instances-toolbar">
+        <div class="toolbar-group">
+          <select id="instance-state-filter">
+            <option value="">All states</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="terminated">Terminated</option>
+          </select>
+          <button id="btn-refresh-instances">Refresh</button>
+          <button id="btn-start-instance" class="btn-primary">Start Instance</button>
+        </div>
+      </div>
+      <div id="instances-content">
+        <table id="instances-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Process</th>
+              <th>Version</th>
+              <th>State</th>
+              <th>Created</th>
+              <th>Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="instances-tbody"></tbody>
+        </table>
+        <div id="instances-empty" class="empty-state">No instances found</div>
+      </div>
+    </div>
+
+    <!-- Instance Detail View -->
+    <div id="view-instance-detail" class="view">
+      <!-- Metadata header bar -->
+      <div id="detail-meta-bar">
+        <div class="meta-item">
+          <span id="detail-state-icon" class="meta-icon"></span>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Process Name</div>
+          <div class="meta-value" id="meta-process-name">—</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Instance Key</div>
+          <div class="meta-value mono" id="meta-instance-key">—</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Version</div>
+          <div class="meta-value" id="meta-version">—</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Start Date</div>
+          <div class="meta-value" id="meta-start-date">—</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">End Date</div>
+          <div class="meta-value" id="meta-end-date">—</div>
+        </div>
+        <div class="meta-item" style="margin-left:auto;">
+          <button id="btn-back-instances" class="btn-small">&larr; Instances</button>
+          <button id="btn-refresh-detail" class="btn-small">Refresh</button>
+        </div>
+      </div>
+      <!-- Diagram -->
+      <div id="detail-diagram-area">
+        <div id="detail-canvas"></div>
+      </div>
+      <!-- Bottom panel: history + variables -->
+      <div id="detail-bottom-panel">
+        <div id="detail-history-panel">
+          <div class="panel-header">Instance History</div>
+          <div id="detail-history-tree"></div>
+        </div>
+        <div id="detail-variables-panel">
+          <div class="panel-header">Variables</div>
+          <div id="detail-variables-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Tasks View -->
+    <div id="view-user-tasks" class="view">
+      <div id="user-tasks-toolbar">
+        <div class="toolbar-group">
+          <select id="user-task-state-filter">
+            <option value="">All states</option>
+            <option value="created">Created</option>
+            <option value="claimed">Claimed</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button id="btn-refresh-user-tasks">Refresh</button>
+        </div>
+      </div>
+      <div id="user-tasks-content">
+        <table id="user-tasks-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Instance</th>
+              <th>Element</th>
+              <th>Task Name</th>
+              <th>Assignee</th>
+              <th>State</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="user-tasks-tbody"></tbody>
+        </table>
+        <div id="user-tasks-empty" class="empty-state">No user tasks found</div>
+      </div>
+    </div>
+
+    <!-- User Task Action Modal -->
+    <div id="user-task-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="modal-title">Task Action</h3>
+          <button id="modal-close" class="btn-small">&times;</button>
+        </div>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- Incidents View -->
+    <div id="view-incidents" class="view">
+      <div id="incidents-toolbar">
+        <div class="toolbar-group">
+          <button id="btn-refresh-incidents">Refresh</button>
+        </div>
+      </div>
+      <div id="incidents-content">
+        <table id="incidents-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Instance</th>
+              <th>Type</th>
+              <th>Error</th>
+              <th>State</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="incidents-tbody"></tbody>
+        </table>
+        <div id="incidents-empty" class="empty-state">No incidents found</div>
+      </div>
+    </div>
+
+    <div id="status-bar">
+      <span id="status-message">Ready</span>
+    </div>
+  </div>
+  <script type="module" src="src/main.ts"></script>
+</body>
+</html>
