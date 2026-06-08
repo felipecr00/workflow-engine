@@ -8,7 +8,10 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server/index.js",
     "dev": "tsx watch src/server/index.ts",
+    "db:setup": "tsx src/engine/db/cli-bootstrap.ts",
+    "db:reset": "tsx src/engine/db/cli-bootstrap.ts --reset",
     "migrate": "tsx src/engine/db/cli-migrate.ts",
+    "setup": "npm run db:setup && npm run migrate",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"

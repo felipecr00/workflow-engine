@@ -1,16 +1,21 @@
-import type { Generated, JSONColumnType } from "kysely";
+import type { Generated, JSONColumnType } from 'kysely';
 
-export type InstanceState = "active" | "completed" | "terminated" | "suspended";
-export type TokenState = "active" | "waiting" | "completed" | "incident";
-export type JobState = "pending" | "active" | "completed" | "failed" | "incident";
-export type TimerType = "duration" | "date" | "cycle";
-export type TimerStateValue = "active" | "fired" | "cancelled";
+export type InstanceState = 'active' | 'completed' | 'terminated' | 'suspended';
+export type TokenState = 'active' | 'waiting' | 'completed' | 'incident';
+export type JobState =
+  | 'pending'
+  | 'active'
+  | 'completed'
+  | 'failed'
+  | 'incident';
+export type TimerType = 'duration' | 'date' | 'cycle';
+export type TimerStateValue = 'active' | 'fired' | 'cancelled';
 export type IncidentType =
-  | "job_retries_exhausted"
-  | "expression_error"
-  | "timer_error"
-  | "unhandled_error";
-export type IncidentStateValue = "active" | "resolved";
+  | 'job_retries_exhausted'
+  | 'expression_error'
+  | 'timer_error'
+  | 'unhandled_error';
+export type IncidentStateValue = 'active' | 'resolved';
 
 export interface ProcessDefinitionsTable {
   id: string;
@@ -27,6 +32,7 @@ export interface ProcessInstancesTable {
   definition_id: string;
   definition_key: string;
   definition_version: number;
+  definition_name: string | null;
   state: Generated<InstanceState>;
   variables: JSONColumnType<Record<string, unknown>>;
   created_at: Generated<Date>;
@@ -91,7 +97,7 @@ export interface IncidentsTable {
   resolved_by: string | null;
 }
 
-export type UserTaskState = "created" | "claimed" | "completed" | "cancelled";
+export type UserTaskState = 'created' | 'claimed' | 'completed' | 'cancelled';
 
 export interface UserTasksTable {
   id: string;

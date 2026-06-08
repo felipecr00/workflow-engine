@@ -1,12 +1,13 @@
-import type { FastifyInstance } from "fastify";
-import type { Kysely } from "kysely";
-import type { Database } from "../../engine/db/types";
+import type { FastifyInstance } from 'fastify';
+import type { Kysely } from 'kysely';
+import { v4 as uuid } from 'uuid';
+import type { Database } from '../../engine/db/types';
 import {
   createProject,
   getProject,
   updateProject,
   deleteProject,
-} from "../../engine/repository/projects";
+} from '../../engine/repository/projects';
 
 interface ProjectParams {
   id: string;
@@ -27,16 +28,52 @@ interface UpdateProjectBody {
   folderId?: string | null;
 }
 
-const DEFAULT_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
+/**
+ * Derive a valid BPMN process id (an XML NCName) from the user-defined
+ * project name. A short unique suffix keeps distinct processes from colliding
+ * on the same id (which would otherwise merge their version histories), while
+ * the human name itself is preserved verbatim in the `name` attribute.
+ */
+function processIdFromName(name: string): string {
+  const slug = name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accents
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/g, '');
+  const base = /^[a-z]/.test(slug) ? slug : `process-${slug}`;
+  const cleaned = base.replace(/^-+|-+$/g, '') || 'process';
+  return `${cleaned}-${uuid().slice(0, 6)}`;
+}
+
+function escapeXmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Build the starter diagram for a brand-new project, embedding the exact
+ * user-defined name so deployments and instances reference it instead of a
+ * generic "Process_1".
+ */
+function buildDefaultBpmn(name: string): string {
+  const processId = processIdFromName(name);
+  const safeName = escapeXmlAttr(name);
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
                   id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
-  <bpmn:process id="Process_1" isExecutable="true">
+  <bpmn:process id="${processId}" name="${safeName}" isExecutable="true">
     <bpmn:startEvent id="Start" name="Start" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="${processId}">
       <bpmndi:BPMNShape id="Start_di" bpmnElement="Start">
         <dc:Bounds x="180" y="160" width="36" height="36" />
         <bpmndi:BPMNLabel><dc:Bounds x="186" y="203" width="24" height="14" /></bpmndi:BPMNLabel>
@@ -44,20 +81,24 @@ const DEFAULT_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
+}
 
-export function registerProjectRoutes(app: FastifyInstance, db: Kysely<Database>): void {
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  db: Kysely<Database>,
+): void {
   app.post<{ Body: CreateProjectBody }>(
-    "/projects",
+    '/projects',
     {
       schema: {
         body: {
-          type: "object",
-          required: ["name"],
+          type: 'object',
+          required: ['name'],
           properties: {
-            name: { type: "string", minLength: 1 },
-            folderId: { type: ["string", "null"] },
-            bpmnXml: { type: "string" },
-            description: { type: "string" },
+            name: { type: 'string', minLength: 1 },
+            folderId: { type: ['string', 'null'] },
+            bpmnXml: { type: 'string' },
+            description: { type: 'string' },
           },
         },
       },
@@ -67,7 +108,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Kysely<Database>
         db,
         req.body.name,
         req.body.folderId ?? null,
-        req.body.bpmnXml ?? DEFAULT_BPMN,
+        req.body.bpmnXml ?? buildDefaultBpmn(req.body.name),
         req.body.description,
       );
       reply.code(201);
@@ -76,13 +117,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: Kysely<Database>
   );
 
   app.get<{ Params: ProjectParams }>(
-    "/projects/:id",
+    '/projects/:id',
     {
       schema: {
         params: {
-          type: "object",
-          required: ["id"],
-          properties: { id: { type: "string" } },
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string' } },
         },
       },
     },
@@ -90,29 +131,29 @@ export function registerProjectRoutes(app: FastifyInstance, db: Kysely<Database>
       const project = await getProject(db, req.params.id);
       if (!project) {
         reply.code(404);
-        return { error: "not_found" };
+        return { error: 'not_found' };
       }
       return project;
     },
   );
 
   app.put<{ Params: ProjectParams; Body: UpdateProjectBody }>(
-    "/projects/:id",
+    '/projects/:id',
     {
       schema: {
         params: {
-          type: "object",
-          required: ["id"],
-          properties: { id: { type: "string" } },
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string' } },
         },
         body: {
-          type: "object",
+          type: 'object',
           properties: {
-            name: { type: "string", minLength: 1 },
-            bpmnXml: { type: "string" },
-            description: { type: ["string", "null"] },
-            deployedDefinitionId: { type: ["string", "null"] },
-            folderId: { type: ["string", "null"] },
+            name: { type: 'string', minLength: 1 },
+            bpmnXml: { type: 'string' },
+            description: { type: ['string', 'null'] },
+            deployedDefinitionId: { type: ['string', 'null'] },
+            folderId: { type: ['string', 'null'] },
           },
         },
       },
@@ -121,29 +162,31 @@ export function registerProjectRoutes(app: FastifyInstance, db: Kysely<Database>
       const updates: Record<string, unknown> = {};
       if (req.body.name !== undefined) updates.name = req.body.name;
       if (req.body.bpmnXml !== undefined) updates.bpmn_xml = req.body.bpmnXml;
-      if (req.body.description !== undefined) updates.description = req.body.description;
+      if (req.body.description !== undefined)
+        updates.description = req.body.description;
       if (req.body.deployedDefinitionId !== undefined)
         updates.deployed_definition_id = req.body.deployedDefinitionId;
-      if (req.body.folderId !== undefined) updates.folder_id = req.body.folderId;
+      if (req.body.folderId !== undefined)
+        updates.folder_id = req.body.folderId;
 
       try {
         const project = await updateProject(db, req.params.id, updates);
         return project;
       } catch {
         reply.code(404);
-        return { error: "not_found" };
+        return { error: 'not_found' };
       }
     },
   );
 
   app.delete<{ Params: ProjectParams }>(
-    "/projects/:id",
+    '/projects/:id',
     {
       schema: {
         params: {
-          type: "object",
-          required: ["id"],
-          properties: { id: { type: "string" } },
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string' } },
         },
       },
     },
