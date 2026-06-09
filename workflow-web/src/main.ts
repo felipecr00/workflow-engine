@@ -11,6 +11,7 @@ import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import '@bpmn-io/properties-panel/dist/assets/properties-panel.css';
+import '@bpmn-io/form-js/dist/assets/form-js.css';
 
 import { DEFAULT_DIAGRAM } from './default-diagram';
 import * as api from './api';
@@ -984,6 +985,8 @@ function defaultTaskFilters(): TaskFilters {
 // State
 let tasksAll: api.UserTaskInfo[] = [];
 let tasksSelectedId: string | null = null;
+const taskFormCache = new Map<string, api.UserTaskFormPayload | null>();
+let activeFormJs: { destroy: () => void } | null = null;
 let tasksSortOrder: TaskSortOrder = loadTasksSort();
 let tasksAppliedFilters: TaskFilters = loadTasksFilters();
 let tasksActiveTab: 'task' | 'process' = 'task';
@@ -1217,8 +1220,29 @@ async function selectTask(taskId: string, pushHistory = true) {
   tasksProcessRendered = false;
   switchTaskTab('task');
 
-  renderTaskForm(task);
+  // Tear down any previous form-js instance before painting the new task
+  if (activeFormJs) {
+    try { activeFormJs.destroy(); } catch { /* ignore */ }
+    activeFormJs = null;
+  }
+
+  // Render synchronously with whatever we already know (cached form or no
+  // form). Then fetch the detail and re-render if the form just appeared.
+  renderTaskForm(task, taskFormCache.get(task.id) ?? undefined);
   renderTaskInfo(task);
+
+  // Enrich the task with its embedded form definition. Backend resolves the
+  // form snapshot taken at task-creation time, not the latest version.
+  api
+    .getUserTaskDetail(taskId)
+    .then((detail) => {
+      if (tasksSelectedId !== taskId) return;
+      taskFormCache.set(taskId, detail.form);
+      renderTaskForm(task, detail.form);
+    })
+    .catch(() => {
+      /* fall back to ad-hoc form */
+    });
 
   // Enrich with the full instance snapshot (process name/version + diagram)
   try {
@@ -1299,7 +1323,10 @@ function renderReadonlyVars(vars: Record<string, unknown>): string {
   return html + `</tbody></table>`;
 }
 
-function renderTaskForm(task: api.UserTaskInfo) {
+function renderTaskForm(
+  task: api.UserTaskInfo,
+  form?: api.UserTaskFormPayload | null,
+) {
   const panel = tasksTabTask;
 
   if (task.state === 'completed' || task.state === 'cancelled') {
@@ -1318,6 +1345,14 @@ function renderTaskForm(task: api.UserTaskInfo) {
     return;
   }
 
+  if (form && form.format === 'form-js') {
+    renderFormJsForm(task, form).catch((err) =>
+      setStatus(`Failed to render form: ${err?.message ?? err}`, 'error'),
+    );
+    return;
+  }
+
+  // Fallback: derive ad-hoc inputs from input_variables (existing behavior).
   const entries = Object.entries(task.input_variables ?? {});
   let fields = '';
   if (entries.length === 0) {
@@ -1349,6 +1384,108 @@ function renderTaskForm(task: api.UserTaskInfo) {
       completeTaskFromForm(task);
     },
   );
+}
+
+async function renderFormJsForm(
+  task: api.UserTaskInfo,
+  form: api.UserTaskFormPayload,
+) {
+  const panel = tasksTabTask;
+  panel.innerHTML = `
+    <div class="task-form-formjs">
+      <div class="task-form-section-title">Form
+        <span class="field-hint">${escHtml(form.key)} v${form.version}</span>
+      </div>
+      <div id="task-form-formjs-container" class="fjs-host"></div>
+      <div id="task-form-formjs-errors" class="task-form-errors" hidden></div>
+      <div class="task-form-actions">
+        <button class="btn-success" id="task-form-complete" type="button">Complete Task</button>
+      </div>
+    </div>`;
+
+  const container = document.getElementById(
+    'task-form-formjs-container',
+  ) as HTMLDivElement;
+  const errorsEl = document.getElementById(
+    'task-form-formjs-errors',
+  ) as HTMLDivElement;
+
+  // Tear down any previous instance (defensive — selectTask also clears).
+  if (activeFormJs) {
+    try { activeFormJs.destroy(); } catch { /* ignore */ }
+    activeFormJs = null;
+  }
+
+  const { Form } = await import('@bpmn-io/form-js');
+  const fjs = new Form({ container });
+  await fjs.importSchema(
+    form.schema as Parameters<typeof fjs.importSchema>[0],
+    task.input_variables ?? {},
+  );
+  activeFormJs = fjs;
+
+  const completeBtn = document.getElementById(
+    'task-form-complete',
+  ) as HTMLButtonElement;
+
+  completeBtn.addEventListener('click', async () => {
+    errorsEl.hidden = true;
+    errorsEl.innerHTML = '';
+
+    const { data, errors } = fjs.submit();
+    const errorEntries = Object.entries(errors ?? {});
+    if (errorEntries.length > 0) {
+      errorsEl.innerHTML =
+        '<strong>Please fix:</strong><ul>' +
+        errorEntries
+          .map(
+            ([field, msgs]) =>
+              `<li><code>${escHtml(field)}</code>: ${escHtml(
+                Array.isArray(msgs) ? msgs.join(', ') : String(msgs),
+              )}</li>`,
+          )
+          .join('') +
+        '</ul>';
+      errorsEl.hidden = false;
+      return;
+    }
+
+    completeBtn.disabled = true;
+    completeBtn.textContent = 'Completing…';
+    try {
+      await api.completeUserTask(task.id, data);
+      setStatus(
+        `Task "${task.task_name ?? task.element_id}" completed`,
+        'success',
+      );
+      if (activeFormJs === fjs) {
+        try { fjs.destroy(); } catch { /* ignore */ }
+        activeFormJs = null;
+      }
+      tasksSelectedId = null;
+      await refreshTasks();
+    } catch (err) {
+      if (err instanceof api.CompleteValidationError) {
+        errorsEl.innerHTML =
+          '<strong>Server rejected the submission:</strong><ul>' +
+          err.details
+            .map(
+              (d) =>
+                `<li><code>${escHtml(d.path)}</code>: ${escHtml(d.message)}</li>`,
+            )
+            .join('') +
+          '</ul>';
+        errorsEl.hidden = false;
+      } else {
+        setStatus(
+          `Complete failed: ${err instanceof Error ? err.message : err}`,
+          'error',
+        );
+      }
+      completeBtn.disabled = false;
+      completeBtn.textContent = 'Complete Task';
+    }
+  });
 }
 
 async function completeTaskFromForm(task: api.UserTaskInfo) {

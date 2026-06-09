@@ -14,6 +14,7 @@ export default defineConfig({
       "/instances": "http://localhost:3000",
       "/incidents": "http://localhost:3000",
       "/user-tasks": "http://localhost:3000",
+      "/forms": "http://localhost:3000",
       "/browse": "http://localhost:3000",
       "/folders": "http://localhost:3000",
       "/projects": "http://localhost:3000",

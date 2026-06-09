@@ -283,6 +283,38 @@ export interface UserTaskInfo {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  form_key?: string | null;
+  form_version?: number | null;
+}
+
+export interface UserTaskFormPayload {
+  key: string;
+  version: number;
+  format: 'form-js' | 'json-schema';
+  schema: Record<string, unknown>;
+}
+
+export interface UserTaskDetail extends UserTaskInfo {
+  form: UserTaskFormPayload | null;
+}
+
+export async function getUserTaskDetail(id: string): Promise<UserTaskDetail> {
+  const res = await fetch(`${BASE}/user-tasks/${id}`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message ?? body.error ?? 'Not found');
+  return body as UserTaskDetail;
+}
+
+export interface CompleteValidationDetail {
+  path: string;
+  message: string;
+}
+
+export class CompleteValidationError extends Error {
+  constructor(public readonly details: CompleteValidationDetail[]) {
+    super('Form validation failed');
+    this.name = 'CompleteValidationError';
+  }
 }
 
 export async function listUserTasks(
@@ -327,8 +359,11 @@ export async function completeUserTask(
     body: JSON.stringify({ variables: variables ?? {} }),
   });
   if (!res.ok) {
-    const body = await res.json();
-    throw new Error(body.message ?? 'Complete failed');
+    const body = await res.json().catch(() => ({}));
+    if (body?.error === 'validation_failed' && Array.isArray(body.details)) {
+      throw new CompleteValidationError(body.details);
+    }
+    throw new Error(body?.message ?? body?.error ?? 'Complete failed');
   }
 }
 

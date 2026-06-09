@@ -1252,6 +1252,34 @@ tr:hover td { background: var(--bg-subtle); }
 .task-form-banner.completed { background: #dbeafe; color: #1e40af; }
 .task-form-banner.cancelled { background: var(--bg-subtle); color: var(--text-secondary); }
 
+/* ── form-js host ──────────────────────────────────────────── */
+.task-form-formjs {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.fjs-host {
+  margin: 12px 0 8px;
+}
+
+.task-form-errors {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-default);
+  padding: 10px 14px;
+  font-size: 0.8125rem;
+  margin-top: 12px;
+}
+
+.task-form-errors ul { margin: 6px 0 0 18px; padding: 0; }
+.task-form-errors code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
 /* ── Right sidebar: Task information ───────────────────────── */
 .tasks-info {
   display: flex;
