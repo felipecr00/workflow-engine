@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  plugins: [react({ jsxImportSource: 'react' })],
   root: ".",
   base: "/modeler/",
   // form-js-editor pins preact <=10.15.1, our root has a newer preact, and
