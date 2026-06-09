@@ -8,6 +8,7 @@ import { registerHealthRoutes } from "./routes/health";
 import { registerIncidentRoutes } from "./routes/incidents";
 import { registerInstanceRoutes } from "./routes/instances";
 import { registerUserTaskRoutes } from "./routes/user-tasks";
+import { registerFormRoutes } from "./routes/forms";
 import { registerFolderRoutes } from "./routes/folders";
 import { registerProjectRoutes } from "./routes/projects";
 
@@ -27,6 +28,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   registerInstanceRoutes(app, opts.engine);
   registerIncidentRoutes(app, opts.engine);
   registerUserTaskRoutes(app, opts.engine);
+  registerFormRoutes(app, opts.engine);
   registerFolderRoutes(app, opts.engine.db);
   registerProjectRoutes(app, opts.engine.db);
 

@@ -153,6 +153,8 @@ html, body, #app {
 #incidents-toolbar,
 #user-tasks-toolbar,
 #home-toolbar,
+#forms-toolbar,
+#form-editor-toolbar,
 #detail-toolbar {
   display: flex;
   align-items: center;
@@ -1251,6 +1253,141 @@ tr:hover td { background: var(--bg-subtle); }
 
 .task-form-banner.completed { background: #dbeafe; color: #1e40af; }
 .task-form-banner.cancelled { background: var(--bg-subtle); color: var(--text-secondary); }
+
+/* ── form-js host ──────────────────────────────────────────── */
+.task-form-formjs {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.fjs-host {
+  margin: 12px 0 8px;
+}
+
+.task-form-errors {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-default);
+  padding: 10px 14px;
+  font-size: 0.8125rem;
+  margin-top: 12px;
+}
+
+.task-form-errors ul { margin: 6px 0 0 18px; padding: 0; }
+.task-form-errors code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ── Forms list view ───────────────────────────────────────── */
+#forms-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+#forms-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#forms-table th,
+#forms-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 0.875rem;
+}
+#forms-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+}
+.forms-row-key {
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+.forms-row-key:hover { text-decoration: underline; }
+
+/* ── Form editor view ──────────────────────────────────────── */
+#form-editor-content {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+.form-editor-panel {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.form-editor-panel.active { display: flex; flex-direction: column; }
+/* form-js-editor.css ships its own background; let it own the canvas */
+#form-editor-design { background: var(--bg-paper); }
+
+.form-editor-preview-host {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.form-json-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  padding: 12px 16px;
+  border: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  resize: none;
+  outline: none;
+}
+
+.form-editor-tabs { gap: 0; }
+.form-editor-tabs .form-tab {
+  padding: 6px 14px;
+  border: 1px solid var(--divider);
+  background: var(--bg-paper);
+  font-size: 0.8125rem;
+  border-radius: 0;
+  border-right-width: 0;
+}
+.form-editor-tabs .form-tab:first-child {
+  border-top-left-radius: var(--radius-button);
+  border-bottom-left-radius: var(--radius-button);
+}
+.form-editor-tabs .form-tab:last-child {
+  border-right-width: 1px;
+  border-top-right-radius: var(--radius-button);
+  border-bottom-right-radius: var(--radius-button);
+}
+.form-editor-tabs .form-tab.active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border-color: var(--color-primary);
+}
+.form-editor-tabs .form-tab.active + .form-tab {
+  border-left-color: var(--color-primary);
+}
+
+.form-editor-dirty {
+  color: var(--color-warning, #d97706);
+  font-size: 1rem;
+  line-height: 1;
+}
 
 /* ── Right sidebar: Task information ───────────────────────── */
 .tasks-info {

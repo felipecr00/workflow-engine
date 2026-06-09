@@ -97,13 +97,14 @@ export async function parseProcess(xml: string): Promise<InternalProcessDefiniti
       }
 
       case "bpmn:UserTask": {
-        const { ioMapping, assignment } = readUserTaskExtensions(el);
+        const { ioMapping, assignment, formKey } = readUserTaskExtensions(el);
         elements.set(el.id, {
           id: el.id,
           type: "userTask",
           name: el.name as string | undefined,
           ioMapping,
           assignment,
+          formKey,
         });
         break;
       }
@@ -354,12 +355,14 @@ function readServiceTaskExtensions(task: ModdleElement): {
 function readUserTaskExtensions(task: ModdleElement): {
   ioMapping?: IoMapping;
   assignment?: AssignmentDefinition;
+  formKey?: string;
 } {
   const ext = task.extensionElements as ModdleElement | undefined;
   const values = (ext?.values as ModdleElement[] | undefined) ?? [];
 
   let ioMapping: IoMapping | undefined;
   let assignment: AssignmentDefinition | undefined;
+  let formKey: string | undefined;
 
   for (const v of values) {
     if (v.$type === "zeebe:IoMapping") {
@@ -375,10 +378,21 @@ function readUserTaskExtensions(task: ModdleElement): {
         assignee: typeof v.assignee === "string" ? v.assignee : undefined,
         candidateGroups: typeof v.candidateGroups === "string" ? v.candidateGroups : undefined,
       };
+    } else if (v.$type === "zeebe:FormDefinition") {
+      // Camunda Modeler writes @formKey for store-backed forms and @formId
+      // for embedded forms. Either resolves against our form store by the
+      // same key, so we treat them as aliases here.
+      const key =
+        typeof v.formKey === "string" && v.formKey.length > 0
+          ? v.formKey
+          : typeof v.formId === "string" && v.formId.length > 0
+            ? v.formId
+            : undefined;
+      if (key) formKey = key;
     }
   }
 
-  return { ioMapping, assignment };
+  return { ioMapping, assignment, formKey };
 }
 
 function readMapping(el: ModdleElement): VariableMapping | null {

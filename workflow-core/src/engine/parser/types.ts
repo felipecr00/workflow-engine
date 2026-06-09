@@ -72,6 +72,7 @@ export interface UserTaskElement extends BaseElement {
   type: "userTask";
   ioMapping?: IoMapping;
   assignment?: AssignmentDefinition;
+  formKey?: string;
 }
 
 export interface IntermediateCatchEventElement extends BaseElement {

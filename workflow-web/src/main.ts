@@ -11,6 +11,8 @@ import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import '@bpmn-io/properties-panel/dist/assets/properties-panel.css';
+import '@bpmn-io/form-js/dist/assets/form-js.css';
+import '@bpmn-io/form-js/dist/assets/form-js-editor.css';
 
 import { DEFAULT_DIAGRAM } from './default-diagram';
 import * as api from './api';
@@ -41,6 +43,8 @@ interface Route {
   projectId?: string;
   instanceId?: string;
   taskId?: string;
+  // form-editor uses null for a brand-new form, string for editing by key.
+  formKey?: string | null;
 }
 
 function parseRoute(pathname: string): Route {
@@ -72,6 +76,12 @@ function parseRoute(pathname: string): Route {
   if (segments[0] === 'user-tasks') return { view: 'tasks' };
   if (segments[0] === 'incidents') return { view: 'incidents' };
 
+  if (segments[0] === 'forms') {
+    if (!segments[1]) return { view: 'forms' };
+    if (segments[1] === 'new') return { view: 'form-editor', formKey: null };
+    return { view: 'form-editor', formKey: decodeURIComponent(segments[1]) };
+  }
+
   return { view: 'home' };
 }
 
@@ -91,6 +101,12 @@ function buildPath(route: Route): string {
       return route.taskId
         ? `${BASE_PATH}/tasks/${route.taskId}`
         : `${BASE_PATH}/tasks`;
+    case 'forms':
+      return `${BASE_PATH}/forms`;
+    case 'form-editor':
+      return route.formKey
+        ? `${BASE_PATH}/forms/${encodeURIComponent(route.formKey)}`
+        : `${BASE_PATH}/forms/new`;
     case 'incidents':
       return `${BASE_PATH}/incidents`;
     default:
@@ -111,12 +127,21 @@ function navigate(route: Route, replace = false) {
 
 /** Apply a route without changing browser history */
 function applyRoute(route: Route) {
+  // Tear down the form editor if we're leaving its view, otherwise the
+  // FormEditor instance survives the route change and re-mounting double-
+  // attaches palettes to the same DOM node.
+  if (route.view !== 'form-editor' && activeFormEditor) {
+    teardownFormEditor();
+  }
+
   // Update tab highlights
-  const tabName =
+  const tabFromView =
     route.view === 'modeler' || route.view === 'instance-detail'
       ? null
-      : route.view;
-  tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === tabName));
+      : route.view === 'form-editor'
+        ? 'forms'
+        : route.view;
+  tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === tabFromView));
   views.forEach((v) =>
     v.classList.toggle('active', v.id === `view-${route.view}`),
   );
@@ -137,6 +162,12 @@ function applyRoute(route: Route) {
       break;
     case 'tasks':
       openTasksView(route.taskId);
+      break;
+    case 'forms':
+      refreshForms();
+      break;
+    case 'form-editor':
+      openFormEditor(route.formKey ?? null);
       break;
     case 'incidents':
       refreshIncidents();
@@ -984,6 +1015,8 @@ function defaultTaskFilters(): TaskFilters {
 // State
 let tasksAll: api.UserTaskInfo[] = [];
 let tasksSelectedId: string | null = null;
+const taskFormCache = new Map<string, api.UserTaskFormPayload | null>();
+let activeFormJs: { destroy: () => void } | null = null;
 let tasksSortOrder: TaskSortOrder = loadTasksSort();
 let tasksAppliedFilters: TaskFilters = loadTasksFilters();
 let tasksActiveTab: 'task' | 'process' = 'task';
@@ -1217,8 +1250,29 @@ async function selectTask(taskId: string, pushHistory = true) {
   tasksProcessRendered = false;
   switchTaskTab('task');
 
-  renderTaskForm(task);
+  // Tear down any previous form-js instance before painting the new task
+  if (activeFormJs) {
+    try { activeFormJs.destroy(); } catch { /* ignore */ }
+    activeFormJs = null;
+  }
+
+  // Render synchronously with whatever we already know (cached form or no
+  // form). Then fetch the detail and re-render if the form just appeared.
+  renderTaskForm(task, taskFormCache.get(task.id) ?? undefined);
   renderTaskInfo(task);
+
+  // Enrich the task with its embedded form definition. Backend resolves the
+  // form snapshot taken at task-creation time, not the latest version.
+  api
+    .getUserTaskDetail(taskId)
+    .then((detail) => {
+      if (tasksSelectedId !== taskId) return;
+      taskFormCache.set(taskId, detail.form);
+      renderTaskForm(task, detail.form);
+    })
+    .catch(() => {
+      /* fall back to ad-hoc form */
+    });
 
   // Enrich with the full instance snapshot (process name/version + diagram)
   try {
@@ -1299,7 +1353,10 @@ function renderReadonlyVars(vars: Record<string, unknown>): string {
   return html + `</tbody></table>`;
 }
 
-function renderTaskForm(task: api.UserTaskInfo) {
+function renderTaskForm(
+  task: api.UserTaskInfo,
+  form?: api.UserTaskFormPayload | null,
+) {
   const panel = tasksTabTask;
 
   if (task.state === 'completed' || task.state === 'cancelled') {
@@ -1318,6 +1375,14 @@ function renderTaskForm(task: api.UserTaskInfo) {
     return;
   }
 
+  if (form && form.format === 'form-js') {
+    renderFormJsForm(task, form).catch((err) =>
+      setStatus(`Failed to render form: ${err?.message ?? err}`, 'error'),
+    );
+    return;
+  }
+
+  // Fallback: derive ad-hoc inputs from input_variables (existing behavior).
   const entries = Object.entries(task.input_variables ?? {});
   let fields = '';
   if (entries.length === 0) {
@@ -1349,6 +1414,108 @@ function renderTaskForm(task: api.UserTaskInfo) {
       completeTaskFromForm(task);
     },
   );
+}
+
+async function renderFormJsForm(
+  task: api.UserTaskInfo,
+  form: api.UserTaskFormPayload,
+) {
+  const panel = tasksTabTask;
+  panel.innerHTML = `
+    <div class="task-form-formjs">
+      <div class="task-form-section-title">Form
+        <span class="field-hint">${escHtml(form.key)} v${form.version}</span>
+      </div>
+      <div id="task-form-formjs-container" class="fjs-host"></div>
+      <div id="task-form-formjs-errors" class="task-form-errors" hidden></div>
+      <div class="task-form-actions">
+        <button class="btn-success" id="task-form-complete" type="button">Complete Task</button>
+      </div>
+    </div>`;
+
+  const container = document.getElementById(
+    'task-form-formjs-container',
+  ) as HTMLDivElement;
+  const errorsEl = document.getElementById(
+    'task-form-formjs-errors',
+  ) as HTMLDivElement;
+
+  // Tear down any previous instance (defensive — selectTask also clears).
+  if (activeFormJs) {
+    try { activeFormJs.destroy(); } catch { /* ignore */ }
+    activeFormJs = null;
+  }
+
+  const { Form } = await import('@bpmn-io/form-js');
+  const fjs = new Form({ container });
+  await fjs.importSchema(
+    form.schema as Parameters<typeof fjs.importSchema>[0],
+    task.input_variables ?? {},
+  );
+  activeFormJs = fjs;
+
+  const completeBtn = document.getElementById(
+    'task-form-complete',
+  ) as HTMLButtonElement;
+
+  completeBtn.addEventListener('click', async () => {
+    errorsEl.hidden = true;
+    errorsEl.innerHTML = '';
+
+    const { data, errors } = fjs.submit();
+    const errorEntries = Object.entries(errors ?? {});
+    if (errorEntries.length > 0) {
+      errorsEl.innerHTML =
+        '<strong>Please fix:</strong><ul>' +
+        errorEntries
+          .map(
+            ([field, msgs]) =>
+              `<li><code>${escHtml(field)}</code>: ${escHtml(
+                Array.isArray(msgs) ? msgs.join(', ') : String(msgs),
+              )}</li>`,
+          )
+          .join('') +
+        '</ul>';
+      errorsEl.hidden = false;
+      return;
+    }
+
+    completeBtn.disabled = true;
+    completeBtn.textContent = 'Completing…';
+    try {
+      await api.completeUserTask(task.id, data);
+      setStatus(
+        `Task "${task.task_name ?? task.element_id}" completed`,
+        'success',
+      );
+      if (activeFormJs === fjs) {
+        try { fjs.destroy(); } catch { /* ignore */ }
+        activeFormJs = null;
+      }
+      tasksSelectedId = null;
+      await refreshTasks();
+    } catch (err) {
+      if (err instanceof api.CompleteValidationError) {
+        errorsEl.innerHTML =
+          '<strong>Server rejected the submission:</strong><ul>' +
+          err.details
+            .map(
+              (d) =>
+                `<li><code>${escHtml(d.path)}</code>: ${escHtml(d.message)}</li>`,
+            )
+            .join('') +
+          '</ul>';
+        errorsEl.hidden = false;
+      } else {
+        setStatus(
+          `Complete failed: ${err instanceof Error ? err.message : err}`,
+          'error',
+        );
+      }
+      completeBtn.disabled = false;
+      completeBtn.textContent = 'Complete Task';
+    }
+  });
 }
 
 async function completeTaskFromForm(task: api.UserTaskInfo) {
@@ -1834,6 +2001,300 @@ function escHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// ── Forms list view ─────────────────────────────────────────
+const formsTbody = document.getElementById('forms-tbody')!;
+const formsEmpty = document.getElementById('forms-empty')!;
+const formsTable = document.getElementById('forms-table')!;
+
+async function refreshForms() {
+  try {
+    const forms = await api.listForms();
+    formsTbody.innerHTML = '';
+    const hasForms = forms.length > 0;
+    formsEmpty.style.display = hasForms ? 'none' : 'block';
+    formsTable.style.display = hasForms ? '' : 'none';
+
+    for (const f of forms) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="forms-row-key" data-edit-form="${escHtml(
+          f.key,
+        )}">${escHtml(f.key)}</span></td>
+        <td>v${f.version}</td>
+        <td>${escHtml(f.format)}</td>
+        <td>${fmtDate(f.deployedAt)}</td>
+        <td><button class="btn-small" data-edit-form="${escHtml(
+          f.key,
+        )}">Edit</button></td>
+      `;
+      formsTbody.appendChild(tr);
+    }
+
+    formsTbody.querySelectorAll('[data-edit-form]').forEach((el) =>
+      el.addEventListener('click', () => {
+        const key = (el as HTMLElement).dataset.editForm!;
+        navigate({ view: 'form-editor', formKey: key });
+      }),
+    );
+
+    setStatus(`${forms.length} form(s) loaded`, 'success');
+  } catch (err) {
+    setStatus(
+      `Failed to load forms: ${err instanceof Error ? err.message : err}`,
+      'error',
+    );
+  }
+}
+
+document
+  .getElementById('btn-refresh-forms')!
+  .addEventListener('click', refreshForms);
+
+const newFormHandler = () =>
+  navigate({ view: 'form-editor', formKey: null });
+document.getElementById('btn-new-form')!.addEventListener('click', newFormHandler);
+document
+  .getElementById('btn-new-form-empty')!
+  .addEventListener('click', newFormHandler);
+
+// ── Form editor view ────────────────────────────────────────
+// FormEditor instance reference. Kept at module scope so applyRoute can
+// destroy it on route change — leaking it would attach a second palette to
+// the same DOM on re-entry.
+interface FormEditorLike {
+  importSchema: (schema: Record<string, unknown>) => Promise<unknown>;
+  saveSchema: () => Record<string, unknown>;
+  destroy: () => void;
+  on: (event: string, cb: () => void) => void;
+}
+let activeFormEditor: FormEditorLike | null = null;
+let activeFormPreview: { destroy: () => void } | null = null;
+let activeFormKey: string | null = null;
+let activeFormDirty = false;
+let activeFormCurrentTab: 'design' | 'preview' | 'json' = 'design';
+
+const EMPTY_FORM_SCHEMA: Record<string, unknown> = {
+  type: 'default',
+  components: [],
+};
+
+function setFormEditorTitle(key: string | null) {
+  document.getElementById('form-editor-title')!.textContent =
+    key ? key : '(new form)';
+}
+
+function setFormEditorDirty(dirty: boolean) {
+  activeFormDirty = dirty;
+  document.getElementById('form-editor-dirty')!.hidden = !dirty;
+}
+
+function teardownFormEditor() {
+  if (activeFormEditor) {
+    try { activeFormEditor.destroy(); } catch { /* ignore */ }
+    activeFormEditor = null;
+  }
+  if (activeFormPreview) {
+    try { activeFormPreview.destroy(); } catch { /* ignore */ }
+    activeFormPreview = null;
+  }
+  document.getElementById('form-editor-design')!.innerHTML = '';
+  document.getElementById('form-editor-preview-host')!.innerHTML = '';
+  (document.getElementById('form-editor-json-content') as HTMLTextAreaElement)
+    .value = '';
+  activeFormDirty = false;
+  document.getElementById('form-editor-dirty')!.hidden = true;
+  activeFormCurrentTab = 'design';
+  switchFormEditorTabUi('design');
+}
+
+async function openFormEditor(key: string | null) {
+  // Always start from a clean slate; navigation reuses the same DOM.
+  teardownFormEditor();
+  activeFormKey = key;
+  setFormEditorTitle(key);
+  setFormEditorDirty(false);
+
+  let initialSchema: Record<string, unknown> = EMPTY_FORM_SCHEMA;
+  if (key) {
+    try {
+      const detail = await api.getForm(key);
+      initialSchema = detail.schema;
+    } catch (err) {
+      setStatus(
+        `Could not load form "${key}": ${
+          err instanceof Error ? err.message : err
+        }`,
+        'error',
+      );
+      // Keep the editor open with an empty schema rather than bouncing
+      // the user — they may still want to author with this key.
+    }
+  }
+
+  const designHost = document.getElementById(
+    'form-editor-design',
+  ) as HTMLDivElement;
+
+  // form-js is ESM-only and adds ~280 KB; load on first use.
+  const { FormEditor } = (await import('@bpmn-io/form-js')) as unknown as {
+    FormEditor: new (opts: { container: HTMLElement }) => FormEditorLike;
+  };
+  const editor = new FormEditor({ container: designHost });
+  try {
+    await editor.importSchema(initialSchema);
+  } catch (err) {
+    setStatus(
+      `Editor failed to load schema: ${err instanceof Error ? err.message : err}`,
+      'error',
+    );
+  }
+  editor.on('changed', () => {
+    if (!activeFormDirty) setFormEditorDirty(true);
+  });
+  activeFormEditor = editor;
+  setStatus(
+    key ? `Editing "${key}"` : 'New form — drop components from the palette',
+    'success',
+  );
+}
+
+function switchFormEditorTabUi(tab: 'design' | 'preview' | 'json') {
+  document.querySelectorAll<HTMLElement>('.form-editor-tabs .form-tab').forEach(
+    (btn) => {
+      const isActive = btn.dataset.formTab === tab;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+    },
+  );
+  ['design', 'preview', 'json'].forEach((id) => {
+    const el = document.getElementById(`form-editor-${id}`)!;
+    const active = id === tab;
+    el.classList.toggle('active', active);
+    el.hidden = !active;
+  });
+}
+
+async function switchFormEditorTab(tab: 'design' | 'preview' | 'json') {
+  if (!activeFormEditor) {
+    switchFormEditorTabUi(tab);
+    activeFormCurrentTab = tab;
+    return;
+  }
+
+  // Snapshot the current schema before swapping panels so Preview and JSON
+  // always reflect what the user just authored in Design.
+  const schema = activeFormEditor.saveSchema();
+
+  switchFormEditorTabUi(tab);
+  activeFormCurrentTab = tab;
+
+  if (tab === 'preview') {
+    if (activeFormPreview) {
+      try { activeFormPreview.destroy(); } catch { /* ignore */ }
+      activeFormPreview = null;
+    }
+    const previewHost = document.getElementById(
+      'form-editor-preview-host',
+    ) as HTMLDivElement;
+    previewHost.innerHTML = '';
+    const { Form } = await import('@bpmn-io/form-js');
+    const viewer = new Form({ container: previewHost });
+    await viewer.importSchema(
+      schema as Parameters<typeof viewer.importSchema>[0],
+      {},
+    );
+    activeFormPreview = viewer;
+  } else if (tab === 'json') {
+    const ta = document.getElementById(
+      'form-editor-json-content',
+    ) as HTMLTextAreaElement;
+    ta.value = JSON.stringify(schema, null, 2);
+  }
+}
+
+document.querySelectorAll<HTMLElement>('.form-editor-tabs .form-tab').forEach(
+  (btn) => {
+    btn.addEventListener('click', () =>
+      switchFormEditorTab(btn.dataset.formTab as 'design' | 'preview' | 'json'),
+    );
+  },
+);
+
+document.getElementById('btn-back-forms')!.addEventListener('click', () => {
+  navigate({ view: 'forms' });
+});
+
+document.getElementById('btn-form-export')!.addEventListener('click', () => {
+  if (!activeFormEditor) {
+    setStatus('Nothing to export', 'error');
+    return;
+  }
+  const schema = activeFormEditor.saveSchema();
+  const blob = new Blob([JSON.stringify(schema, null, 2)], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${activeFormKey ?? 'form'}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('Form schema exported', 'success');
+});
+
+document
+  .getElementById('btn-form-save')!
+  .addEventListener('click', async () => {
+    if (!activeFormEditor) {
+      setStatus('Editor not ready', 'error');
+      return;
+    }
+    let key = activeFormKey;
+    if (!key) {
+      const entered = prompt('Form key (used to reference this form from BPMN):');
+      const trimmed = entered?.trim();
+      if (!trimmed) return;
+      key = trimmed;
+    }
+
+    // saveSchema captures the editor state; the backend re-validates that
+    // every component is in the supported subset before persisting.
+    const schema = activeFormEditor.saveSchema();
+    const btn = document.getElementById('btn-form-save') as HTMLButtonElement;
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Saving…';
+    try {
+      const result = await api.deployForm(key, schema);
+      activeFormKey = result.key;
+      setFormEditorTitle(result.key);
+      setFormEditorDirty(false);
+      setStatus(
+        `Deployed "${result.key}" v${result.version}`,
+        'success',
+      );
+      // Keep the user in the editor on the canonical URL for this form so a
+      // refresh re-loads the persisted version, not the brand-new path.
+      history.replaceState(
+        { view: 'form-editor', formKey: result.key },
+        '',
+        buildPath({ view: 'form-editor', formKey: result.key }),
+      );
+    } catch (err) {
+      if (err instanceof api.UnsupportedFormFieldClientError) {
+        setStatus(err.message, 'error');
+      } else {
+        setStatus(
+          `Save failed: ${err instanceof Error ? err.message : err}`,
+          'error',
+        );
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  });
 
 // Expose for debugging
 (window as any).__modeler = modeler;

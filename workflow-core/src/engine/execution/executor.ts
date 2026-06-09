@@ -14,6 +14,8 @@ import type {
 } from "../parser/types";
 import { computeTimerDueAt } from "../timer/iso-duration";
 import { recordAudit } from "../repository/audit";
+import { findLatestFormByKey } from "../repository/forms";
+import { createIncident } from "../repository/incidents";
 import {
   findInstance,
   markInstanceCompleted,
@@ -198,6 +200,37 @@ async function enterUserTask(
     ? element.assignment.candidateGroups.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
 
+  // Resolve the form (if any) at task-creation time so the renderer sees a
+  // stable version even if newer versions of the form get deployed later.
+  // A formKey that does not resolve raises an incident — same shape as a
+  // service task with no registered handler.
+  let formKey: string | null = null;
+  let formVersion: number | null = null;
+  if (element.formKey) {
+    const form = await findLatestFormByKey(trx, element.formKey);
+    if (!form) {
+      await setTokenState(trx, token.id, "incident");
+      const incident = await createIncident(trx, {
+        instanceId: token.instance_id,
+        tokenId: token.id,
+        type: "unhandled_error",
+        errorMessage: `User task ${element.id} references formKey "${element.formKey}" but no form is deployed with that key`,
+      });
+      await recordAudit(trx, {
+        instanceId: token.instance_id,
+        tokenId: token.id,
+        incidentId: incident.id,
+        eventType: "INCIDENT_CREATED",
+        elementId: element.id,
+        elementType: element.type,
+        metadata: { reason: "form_not_deployed", formKey: element.formKey },
+      });
+      return null;
+    }
+    formKey = form.key;
+    formVersion = form.version;
+  }
+
   const userTask = await createUserTask(trx, {
     instanceId: token.instance_id,
     tokenId: token.id,
@@ -206,6 +239,8 @@ async function enterUserTask(
     assignee: element.assignment?.assignee,
     candidateGroups,
     inputVariables: input,
+    formKey,
+    formVersion,
   });
   await setTokenState(trx, token.id, "waiting");
   await recordAudit(trx, {
@@ -218,6 +253,8 @@ async function enterUserTask(
       userTaskId: userTask.id,
       assignee: element.assignment?.assignee,
       candidateGroups,
+      formKey,
+      formVersion,
     },
   });
   return null;

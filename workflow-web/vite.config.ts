@@ -3,6 +3,15 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: ".",
   base: "/modeler/",
+  // form-js-editor pins preact <=10.15.1, our root has a newer preact, and
+  // npm ends up installing two copies. Two preact instances mean two hook
+  // registries — the editor's internal renderer schedules setState against
+  // a registry the React tree never reads, so the canvas stays blank and
+  // PropertiesPanelRenderer.attachTo trips on a null ref. Dedupe forces
+  // Vite to bind every "preact" import in the bundle to a single module.
+  resolve: {
+    dedupe: ["preact", "preact/hooks", "preact/jsx-runtime"],
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
@@ -14,6 +23,7 @@ export default defineConfig({
       "/instances": "http://localhost:3000",
       "/incidents": "http://localhost:3000",
       "/user-tasks": "http://localhost:3000",
+      "/forms": "http://localhost:3000",
       "/browse": "http://localhost:3000",
       "/folders": "http://localhost:3000",
       "/projects": "http://localhost:3000",

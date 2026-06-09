@@ -14,6 +14,7 @@
         <button class="tab active" data-tab="home">Home</button>
         <button class="tab" data-tab="instances">Instances</button>
         <button class="tab" data-tab="tasks">Tasklist</button>
+        <button class="tab" data-tab="forms">Forms</button>
         <button class="tab" data-tab="incidents">Incidents</button>
       </nav>
     </div>
@@ -255,6 +256,69 @@
           <button id="modal-close" class="btn-small">&times;</button>
         </div>
         <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- Forms List View -->
+    <div id="view-forms" class="view">
+      <div id="forms-toolbar">
+        <div class="toolbar-group">
+          <button id="btn-refresh-forms">Refresh</button>
+        </div>
+        <div class="toolbar-group">
+          <button id="btn-new-form" class="btn-primary">New Form</button>
+        </div>
+      </div>
+      <div id="forms-content">
+        <table id="forms-table">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Version</th>
+              <th>Format</th>
+              <th>Deployed At</th>
+              <th style="width:80px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="forms-tbody"></tbody>
+        </table>
+        <div id="forms-empty" class="empty-state">
+          <div style="margin-bottom:12px;">No forms yet</div>
+          <button id="btn-new-form-empty" class="btn-primary">Create your first form</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Form Editor View -->
+    <div id="view-form-editor" class="view">
+      <div id="form-editor-toolbar">
+        <div class="toolbar-group">
+          <button id="btn-back-forms">&larr; Forms</button>
+          <span id="form-editor-title" style="font-weight:600;font-size:13px;"></span>
+          <span id="form-editor-dirty" class="form-editor-dirty" hidden title="Unsaved changes">●</span>
+        </div>
+        <div class="toolbar-group form-editor-tabs" role="tablist" aria-label="Form editor views">
+          <button class="form-tab active" data-form-tab="design"
+                  role="tab" aria-selected="true" type="button">Design</button>
+          <button class="form-tab" data-form-tab="preview"
+                  role="tab" aria-selected="false" type="button">Preview</button>
+          <button class="form-tab" data-form-tab="json"
+                  role="tab" aria-selected="false" type="button">JSON</button>
+        </div>
+        <div class="toolbar-group">
+          <button id="btn-form-export">Export</button>
+          <button id="btn-form-save" class="btn-primary">Save &amp; Deploy</button>
+        </div>
+      </div>
+      <div id="form-editor-content">
+        <div id="form-editor-design" class="form-editor-panel active"></div>
+        <div id="form-editor-preview" class="form-editor-panel" hidden>
+          <div id="form-editor-preview-host" class="form-editor-preview-host"></div>
+        </div>
+        <div id="form-editor-json" class="form-editor-panel" hidden>
+          <textarea id="form-editor-json-content" class="form-json-editor"
+                    spellcheck="false" readonly></textarea>
+        </div>
       </div>
     </div>
 

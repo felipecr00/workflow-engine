@@ -283,6 +283,105 @@ export interface UserTaskInfo {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  form_key?: string | null;
+  form_version?: number | null;
+}
+
+export interface UserTaskFormPayload {
+  key: string;
+  version: number;
+  format: 'form-js' | 'json-schema';
+  schema: Record<string, unknown>;
+}
+
+export interface UserTaskDetail extends UserTaskInfo {
+  form: UserTaskFormPayload | null;
+}
+
+export async function getUserTaskDetail(id: string): Promise<UserTaskDetail> {
+  const res = await fetch(`${BASE}/user-tasks/${id}`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message ?? body.error ?? 'Not found');
+  return body as UserTaskDetail;
+}
+
+export interface CompleteValidationDetail {
+  path: string;
+  message: string;
+}
+
+export class CompleteValidationError extends Error {
+  constructor(public readonly details: CompleteValidationDetail[]) {
+    super('Form validation failed');
+    this.name = 'CompleteValidationError';
+  }
+}
+
+// ── Forms ──────────────────────────────────────────────────
+
+export interface FormInfo {
+  key: string;
+  version: number;
+  format: 'form-js' | 'json-schema';
+  deployedAt: string;
+}
+
+export interface FormDetail extends FormInfo {
+  id: string;
+  schema: Record<string, unknown>;
+  uiSchema?: Record<string, unknown> | null;
+}
+
+export interface DeployFormResult {
+  id: string;
+  key: string;
+  version: number;
+  format: 'form-js' | 'json-schema';
+  deployedAt: string;
+}
+
+export class UnsupportedFormFieldClientError extends Error {
+  constructor(public readonly details: { field: string; type: string }) {
+    super(
+      `Unsupported form-js field "${details.field}" (type "${details.type}"). ` +
+        'Remove or replace this component before saving.',
+    );
+    this.name = 'UnsupportedFormFieldClientError';
+  }
+}
+
+export async function listForms(): Promise<FormInfo[]> {
+  const res = await fetch(`${BASE}/forms`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message ?? body.error ?? 'List forms failed');
+  return (body.forms ?? []) as FormInfo[];
+}
+
+export async function getForm(key: string): Promise<FormDetail> {
+  const res = await fetch(`${BASE}/forms/${encodeURIComponent(key)}`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message ?? body.error ?? 'Get form failed');
+  return body as FormDetail;
+}
+
+export async function deployForm(
+  key: string,
+  schema: Record<string, unknown>,
+  uiSchema?: Record<string, unknown> | null,
+): Promise<DeployFormResult> {
+  const res = await fetch(`${BASE}/forms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, schema, uiSchema: uiSchema ?? null }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (body?.error === 'unsupported_field_type' && body?.details) {
+      throw new UnsupportedFormFieldClientError(body.details);
+    }
+    throw new Error(body?.message ?? body?.error ?? 'Deploy form failed');
+  }
+  return body as DeployFormResult;
 }
 
 export async function listUserTasks(
@@ -327,8 +426,11 @@ export async function completeUserTask(
     body: JSON.stringify({ variables: variables ?? {} }),
   });
   if (!res.ok) {
-    const body = await res.json();
-    throw new Error(body.message ?? 'Complete failed');
+    const body = await res.json().catch(() => ({}));
+    if (body?.error === 'validation_failed' && Array.isArray(body.details)) {
+      throw new CompleteValidationError(body.details);
+    }
+    throw new Error(body?.message ?? body?.error ?? 'Complete failed');
   }
 }
 
