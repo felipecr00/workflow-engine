@@ -51,6 +51,18 @@ export const zeebeDescriptor = {
         { name: "candidateUsers", isAttr: true, type: "String" },
       ],
     },
+    {
+      // The Camunda Modeler emits either @formKey (for keyed deploys against
+      // a form store, our model) or @formId (for embedded forms referenced by
+      // id). We surface them as separate attributes here and let the parser
+      // accept either as a lookup key.
+      name: "FormDefinition",
+      superClass: ["Element"],
+      properties: [
+        { name: "formKey", isAttr: true, type: "String" },
+        { name: "formId", isAttr: true, type: "String" },
+      ],
+    },
   ],
   enumerations: [],
 };

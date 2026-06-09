@@ -115,6 +115,21 @@ export interface UserTasksTable {
   completed_at: Date | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+  form_key: string | null;
+  form_version: number | null;
+}
+
+export type FormFormat = 'form-js' | 'json-schema';
+
+export interface FormsTable {
+  id: string;
+  tenant_id: Generated<string>;
+  key: string;
+  version: number;
+  schema: JSONColumnType<Record<string, unknown>>;
+  format: Generated<FormFormat>;
+  ui_schema: JSONColumnType<Record<string, unknown> | null> | null;
+  deployed_at: Generated<Date>;
 }
 
 export interface AuditLogTable {
@@ -158,6 +173,7 @@ export interface Database {
   timers: TimersTable;
   incidents: IncidentsTable;
   user_tasks: UserTasksTable;
+  forms: FormsTable;
   audit_log: AuditLogTable;
   folders: FoldersTable;
   projects: ProjectsTable;

@@ -52,7 +52,7 @@ export async function dropAllForTests(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query(`
-      DROP TABLE IF EXISTS projects, folders, audit_log, user_tasks, incidents, timers, jobs, tokens,
+      DROP TABLE IF EXISTS projects, folders, audit_log, forms, user_tasks, incidents, timers, jobs, tokens,
         process_instances, process_definitions, schema_migrations CASCADE;
       DROP TYPE IF EXISTS user_task_state, incident_state, incident_type, timer_state,
         timer_type, job_state, token_state, instance_state CASCADE;

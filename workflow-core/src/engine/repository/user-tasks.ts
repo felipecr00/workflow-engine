@@ -18,6 +18,8 @@ export interface UserTaskRow {
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  form_key: string | null;
+  form_version: number | null;
 }
 
 export async function createUserTask(
@@ -30,6 +32,8 @@ export async function createUserTask(
     assignee?: string;
     candidateGroups?: string[];
     inputVariables: Record<string, unknown>;
+    formKey?: string | null;
+    formVersion?: number | null;
   },
 ): Promise<UserTaskRow> {
   const row = await db
@@ -43,6 +47,8 @@ export async function createUserTask(
       assignee: params.assignee ?? null,
       candidate_groups: params.candidateGroups ?? [],
       input_variables: JSON.stringify(params.inputVariables) as unknown as never,
+      form_key: params.formKey ?? null,
+      form_version: params.formVersion ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();

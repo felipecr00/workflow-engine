@@ -43,6 +43,73 @@ describe("parseProcess", () => {
     await expect(parseProcess(xml)).rejects.toBeInstanceOf(ParseError);
   });
 
+  it("extracts formKey from zeebe:formDefinition on a userTask", async () => {
+    const xml = `<?xml version="1.0"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                        xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+        <bpmn:process id="p" isExecutable="true">
+          <bpmn:startEvent id="s"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
+          <bpmn:userTask id="Approve">
+            <bpmn:extensionElements>
+              <zeebe:formDefinition formKey="approval-form" />
+            </bpmn:extensionElements>
+            <bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing>
+          </bpmn:userTask>
+          <bpmn:endEvent id="e"><bpmn:incoming>f2</bpmn:incoming></bpmn:endEvent>
+          <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="Approve"/>
+          <bpmn:sequenceFlow id="f2" sourceRef="Approve" targetRef="e"/>
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const def = await parseProcess(xml);
+    const task = def.elements.get("Approve");
+    expect(task?.type).toBe("userTask");
+    if (task?.type !== "userTask") throw new Error("type guard");
+    expect(task.formKey).toBe("approval-form");
+  });
+
+  it("accepts formId as an alias for formKey on a userTask", async () => {
+    const xml = `<?xml version="1.0"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                        xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+        <bpmn:process id="p" isExecutable="true">
+          <bpmn:startEvent id="s"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
+          <bpmn:userTask id="Approve">
+            <bpmn:extensionElements>
+              <zeebe:formDefinition formId="embedded-approval" />
+            </bpmn:extensionElements>
+            <bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing>
+          </bpmn:userTask>
+          <bpmn:endEvent id="e"><bpmn:incoming>f2</bpmn:incoming></bpmn:endEvent>
+          <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="Approve"/>
+          <bpmn:sequenceFlow id="f2" sourceRef="Approve" targetRef="e"/>
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const def = await parseProcess(xml);
+    const task = def.elements.get("Approve");
+    if (task?.type !== "userTask") throw new Error("type guard");
+    expect(task.formKey).toBe("embedded-approval");
+  });
+
+  it("leaves formKey undefined when userTask has no formDefinition", async () => {
+    const xml = `<?xml version="1.0"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                        xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+        <bpmn:process id="p" isExecutable="true">
+          <bpmn:startEvent id="s"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
+          <bpmn:userTask id="Approve">
+            <bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing>
+          </bpmn:userTask>
+          <bpmn:endEvent id="e"><bpmn:incoming>f2</bpmn:incoming></bpmn:endEvent>
+          <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="Approve"/>
+          <bpmn:sequenceFlow id="f2" sourceRef="Approve" targetRef="e"/>
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const def = await parseProcess(xml);
+    const task = def.elements.get("Approve");
+    if (task?.type !== "userTask") throw new Error("type guard");
+    expect(task.formKey).toBeUndefined();
+  });
+
   it("rejects unsupported BPMN elements clearly", async () => {
     const xml = `<?xml version="1.0"?>
       <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
