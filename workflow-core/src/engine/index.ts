@@ -1,4 +1,8 @@
-export { Engine } from "./engine";
+export {
+  Engine,
+  FormValidationError,
+  UnsupportedFormFieldError,
+} from "./engine";
 export type {
   EngineOptions,
   DeployResult,
@@ -7,6 +11,8 @@ export type {
   MigrateInstanceParams,
   MigrateInstanceResult,
 } from "./engine";
+export type { FormRow } from "./repository/forms";
+export type { FormJsSchema, ValidationFailure } from "./forms/validator";
 export type { JobHandler, JobContext } from "./execution/handler-registry";
 export type {
   InternalProcessDefinition,

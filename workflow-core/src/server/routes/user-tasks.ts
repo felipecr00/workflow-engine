@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { Engine } from "../../engine";
+import { FormValidationError, type Engine } from "../../engine";
 
 interface UserTaskParams {
   id: string;
@@ -41,6 +41,27 @@ export function registerUserTaskRoutes(app: FastifyInstance, engine: Engine): vo
         assignee: req.query.assignee,
       });
       return { userTasks: tasks };
+    },
+  );
+
+  app.get<{ Params: UserTaskParams }>(
+    "/user-tasks/:id",
+    {
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string" } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const task = await engine.getUserTaskDetail(req.params.id);
+      if (!task) {
+        reply.code(404);
+        return { error: "not_found" };
+      }
+      return task;
     },
   );
 
@@ -96,6 +117,10 @@ export function registerUserTaskRoutes(app: FastifyInstance, engine: Engine): vo
         await engine.completeUserTask(req.params.id, req.body.variables ?? {});
         return { ok: true };
       } catch (err) {
+        if (err instanceof FormValidationError) {
+          reply.code(400);
+          return { error: "validation_failed", details: err.details };
+        }
         const message = err instanceof Error ? err.message : String(err);
         reply.code(400);
         return { error: "complete_failed", message };

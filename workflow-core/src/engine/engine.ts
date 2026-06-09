@@ -13,6 +13,21 @@ import { Scheduler } from './execution/scheduler';
 import { parseProcess } from './parser/parser';
 import type { InternalProcessDefinition } from './parser/types';
 import {
+  deriveJsonSchema,
+  UnsupportedFormFieldError,
+  validateAgainstForm,
+  type FormJsSchema,
+  type ValidationFailure,
+} from './forms/validator';
+import {
+  deployForm,
+  findFormByKeyAndVersion,
+  findLatestFormByKey,
+  listForms,
+  type FormRow,
+} from './repository/forms';
+import type { FormFormat } from './db/types';
+import {
   recordAudit,
   listAuditForInstance,
   type AuditEventRow,
@@ -68,6 +83,15 @@ import {
   setTokenState,
   type TokenRow,
 } from './repository/tokens';
+
+export class FormValidationError extends Error {
+  constructor(public readonly details: ValidationFailure[]) {
+    super('Form validation failed');
+    this.name = 'FormValidationError';
+  }
+}
+
+export { UnsupportedFormFieldError };
 
 export interface MigrateInstanceParams {
   instanceId: string;
@@ -434,12 +458,103 @@ export class Engine {
     userTaskId: string,
     variables: Record<string, unknown> = {},
   ): Promise<void> {
+    // Forms validation happens before we open the transaction so the route
+    // can map FormValidationError to a clean 400 without leaving a half-done
+    // tx. The form snapshot resolved at task-creation time is what we
+    // validate against — never the latest version, which may have drifted.
+    const task = await findUserTask(this.db, userTaskId);
+    if (task && task.form_key && task.form_version != null) {
+      const form = await findFormByKeyAndVersion(
+        this.db,
+        task.form_key,
+        task.form_version,
+      );
+      if (form && form.format === 'form-js') {
+        const result = validateAgainstForm(
+          form.schema as FormJsSchema,
+          variables,
+        );
+        if (!result.valid) {
+          throw new FormValidationError(result.errors);
+        }
+      }
+    }
+
     await this.db.transaction().execute(async (trx) => {
       await completeUserTaskAction(trx, this.cache, {
         userTaskId,
         result: Object.keys(variables).length > 0 ? variables : undefined,
       });
     });
+  }
+
+  // ── Forms ─────────────────────────────────────────────────
+
+  async deployForm(params: {
+    key: string;
+    schema: Record<string, unknown>;
+    format?: FormFormat;
+    uiSchema?: Record<string, unknown> | null;
+  }): Promise<FormRow> {
+    const format = params.format ?? 'form-js';
+    // Validate the schema can be derived before we persist anything.
+    // Anything we can't validate server-side, we don't allow to deploy.
+    if (format === 'form-js') {
+      deriveJsonSchema(params.schema as FormJsSchema);
+    }
+    return await deployForm(this.db, params);
+  }
+
+  async listForms(): Promise<FormRow[]> {
+    return await listForms(this.db);
+  }
+
+  async getLatestForm(key: string): Promise<FormRow | null> {
+    return await findLatestFormByKey(this.db, key);
+  }
+
+  async getFormByVersion(
+    key: string,
+    version: number,
+  ): Promise<FormRow | null> {
+    return await findFormByKeyAndVersion(this.db, key, version);
+  }
+
+  async getUserTaskDetail(userTaskId: string): Promise<
+    | (UserTaskRow & {
+        form: {
+          key: string;
+          version: number;
+          format: FormFormat;
+          schema: Record<string, unknown>;
+        } | null;
+      })
+    | null
+  > {
+    const task = await findUserTask(this.db, userTaskId);
+    if (!task) return null;
+    let form: {
+      key: string;
+      version: number;
+      format: FormFormat;
+      schema: Record<string, unknown>;
+    } | null = null;
+    if (task.form_key && task.form_version != null) {
+      const row = await findFormByKeyAndVersion(
+        this.db,
+        task.form_key,
+        task.form_version,
+      );
+      if (row) {
+        form = {
+          key: row.key,
+          version: row.version,
+          format: row.format,
+          schema: row.schema,
+        };
+      }
+    }
+    return { ...task, form };
   }
 
   async cancelUserTask(userTaskId: string): Promise<void> {
