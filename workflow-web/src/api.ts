@@ -317,6 +317,73 @@ export class CompleteValidationError extends Error {
   }
 }
 
+// ── Forms ──────────────────────────────────────────────────
+
+export interface FormInfo {
+  key: string;
+  version: number;
+  format: 'form-js' | 'json-schema';
+  deployedAt: string;
+}
+
+export interface FormDetail extends FormInfo {
+  id: string;
+  schema: Record<string, unknown>;
+  uiSchema?: Record<string, unknown> | null;
+}
+
+export interface DeployFormResult {
+  id: string;
+  key: string;
+  version: number;
+  format: 'form-js' | 'json-schema';
+  deployedAt: string;
+}
+
+export class UnsupportedFormFieldClientError extends Error {
+  constructor(public readonly details: { field: string; type: string }) {
+    super(
+      `Unsupported form-js field "${details.field}" (type "${details.type}"). ` +
+        'Remove or replace this component before saving.',
+    );
+    this.name = 'UnsupportedFormFieldClientError';
+  }
+}
+
+export async function listForms(): Promise<FormInfo[]> {
+  const res = await fetch(`${BASE}/forms`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message ?? body.error ?? 'List forms failed');
+  return (body.forms ?? []) as FormInfo[];
+}
+
+export async function getForm(key: string): Promise<FormDetail> {
+  const res = await fetch(`${BASE}/forms/${encodeURIComponent(key)}`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message ?? body.error ?? 'Get form failed');
+  return body as FormDetail;
+}
+
+export async function deployForm(
+  key: string,
+  schema: Record<string, unknown>,
+  uiSchema?: Record<string, unknown> | null,
+): Promise<DeployFormResult> {
+  const res = await fetch(`${BASE}/forms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, schema, uiSchema: uiSchema ?? null }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (body?.error === 'unsupported_field_type' && body?.details) {
+      throw new UnsupportedFormFieldClientError(body.details);
+    }
+    throw new Error(body?.message ?? body?.error ?? 'Deploy form failed');
+  }
+  return body as DeployFormResult;
+}
+
 export async function listUserTasks(
   filter: {
     instanceId?: string;
