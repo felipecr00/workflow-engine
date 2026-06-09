@@ -14,9 +14,34 @@ Registro acumulativo de sesiones de trabajo. **Más reciente primero.**
 
 ## Estado actual
 
-Sprint 1 de Forms **completo** en la rama `feat/forms-sprint-1`
-(no mergeada a `main`). El engine sigue en Phase 1–2 más esta
-capa de forms:
+Sprints 1 y 2 de Forms **completos** en la rama `feat/forms-sprint-1`
+(no mergeada a `main`). El engine sigue en Phase 1–2; sobre esa base
+ahora hay una capa de forms con editor visual:
+
+### Sprint 2 (nuevo)
+
+- Nueva tab **Forms** en el header con dos vistas: lista
+  (`/modeler/forms`) y editor visual (`/modeler/forms/new`,
+  `/modeler/forms/:key`).
+- Editor montado sobre `FormEditor` de `@bpmn-io/form-js` con
+  el layout de 3 columnas que ya trae la librería (palette,
+  canvas, properties panel).
+- Tabs Design / Preview / JSON: Preview re-importa el schema
+  actual en un `Form` Viewer, JSON serializa con
+  `JSON.stringify(schema, null, 2)` (read-only en este Sprint).
+- Save &amp; Deploy llama `POST /forms`; si el form contiene un
+  tipo no soportado server-side, el status muestra el mensaje
+  accionable con `field` y `type`.
+- Lifecycle del FormEditor protegido: cleanup en cambios de
+  ruta evita doble palette / leaks de instancias.
+- Bug-fix necesario para que el FormEditor renderizara: dedupe
+  de preact en Vite (`resolve.dedupe`). `form-js-editor`
+  pinea `preact &lt;= 10.15.1` y npm acababa instalando dos
+  copias; sin dedupe los hooks del FormEditor escribían contra
+  un registry distinto del que su renderer leía y el canvas
+  quedaba en blanco.
+
+### Sprint 1
 
 - Storage `forms` versionado por key con deploy idempotente
   (deep-equal del schema). Columna `format` (`form-js` | `json-schema`)
@@ -50,11 +75,15 @@ Suite: 72 tests (3 nuevos en parser, 8 en `forms.test.ts`, 8 en
 ## Pendientes inmediatos
 
 - [ ] Esperar review/aprobación para mergear `feat/forms-sprint-1` a `main`.
-- [ ] **Sprint 2** — Vista standalone `/modeler/forms` con CRUD +
-      editor gráfico de form-js, y mejor display de errores
-      (mapear `Field_xxx` → key).
+- [ ] Aprobar/decidir los commits de Sprint 2 (los hay en la rama,
+      sin push).
 - [ ] **Sprint 3** — Picker de form en el properties panel del userTask
-      en el modeler bpmn-js.
+      en el modeler bpmn-js (botón "Open Form" junto al campo formKey;
+      quedó fuera de scope en Sprint 2 por ser opcional).
+- [ ] Polish frontend Sprint 2: editor JSON editable con parse +
+      re-import, mejor display de errores de validación inline en el
+      Viewer (mapear `Field_xxx` → key), botón Delete en la lista
+      cuando exista `DELETE /forms/:key` en backend.
 
 ## Tests flakies conocidos (pre-existentes)
 
@@ -66,6 +95,106 @@ Suite: 72 tests (3 nuevos en parser, 8 en `forms.test.ts`, 8 en
 ---
 
 ## Sesiones
+
+### 2026-06-08 — Sprint 2 Forms Editor (vista list + editor visual)
+
+**Objetivo:** dar al usuario una pantalla para crear, editar y
+deployar forms-js visualmente, equivalente a la de Camunda Forms.
+
+**Hecho:**
+- HTML: tab "Forms" + vistas `#view-forms` (lista) y
+  `#view-form-editor` (toolbar 3 grupos + tabs Design/Preview/JSON +
+  panels) en [index.html](workflow-web/index.html).
+- CSS: import de `form-js-editor.css`, estilos para `.form-editor-tabs`,
+  `.form-editor-panel`, `.form-json-editor`, `.forms-row-key`,
+  `.form-editor-dirty`; `#forms-toolbar` y `#form-editor-toolbar`
+  enchufados al selector compartido de toolbars
+  ([styles.css](workflow-web/src/styles.css),
+  [main.ts:14](workflow-web/src/main.ts:14)).
+- Cliente API: [api.ts](workflow-web/src/api.ts) gana `FormInfo`,
+  `FormDetail`, `listForms`, `getForm`, `deployForm`, y
+  `UnsupportedFormFieldClientError` que mapea el 400 del backend.
+- Router: nuevo `view: 'form-editor'` + `formKey`,
+  rutas `/modeler/forms` / `/modeler/forms/new` /
+  `/modeler/forms/:key`, con tab "Forms" highlighted incluso en el
+  editor. `applyRoute` destruye el `FormEditor` al salir.
+- Vista lista: `refreshForms` lista forms (key, version, format,
+  deployed_at, Edit), botón "New Form" y "Create your first form" en
+  el empty state.
+- Vista editor: `openFormEditor(key|null)` carga
+  `findLatestFormByKey` o un schema vacío default, monta
+  `new FormEditor({ container })` vía import dinámico,
+  importSchema, listener `changed` que marca el dirty `●`. El
+  `teardownFormEditor` limpia editor + Viewer + textarea entre
+  rutas.
+- Tabs Design / Preview / JSON: cambio sincroniza con
+  `editor.saveSchema()`; Preview crea un `Form` Viewer en
+  `#form-editor-preview-host`; JSON pinta el schema serializado en
+  un textarea read-only.
+- Save: `btn-form-save` pide `prompt` el key si es nuevo, deploya
+  con `api.deployForm`, refresca la URL canónica
+  `/modeler/forms/:key`, limpia el dirty marker, status muestra
+  la versión. Export descarga el JSON.
+- **Bug-fix Vite (sin esto el editor no renderizaba)**: dedupe
+  de `preact`, `preact/hooks` y `preact/jsx-runtime` en
+  [vite.config.ts](workflow-web/vite.config.ts). `form-js-editor`
+  pina `preact &lt;= 10.15.1`, el root tiene 10.29.2; sin dedupe Vite
+  optimizaba dos preacts y los hooks del FormEditor escribían contra
+  un registry distinto del que leía su renderer → canvas vacío y
+  `PropertiesPanelRenderer.attachTo` tropezaba con ref null.
+
+**Smoke manual (via Preview MCP):**
+1. `/modeler/forms` → lista vacía con CTA "Create your first form".
+2. New Form → editor con 22 paletas, canvas vacío, properties
+   panel y los 3 tabs.
+3. Importé un schema con 4 componentes (textfield+select+number+
+   checkbox) — los 4 aparecen en Design y el dirty marker `●`
+   se prende.
+4. Tab Preview → 4 inputs renderizados por el Viewer.
+5. Tab JSON → schema serializado, read-only, 886 chars.
+6. Save &amp; Deploy con key `intake-request-form` →
+   `v1` deployado, status "Deployed v1", URL pasa a
+   `/modeler/forms/intake-request-form`, dirty limpio.
+7. Volver a la lista → aparece el form.
+8. Click en el key → editor reabre con el form cargado.
+9. Modifico (añado un textarea `notes`), Save → `v2`.
+10. Intento Save con `{type: 'table'}` (no soportado por backend) →
+    status `Unsupported form-js field "rows" (type "table"). Remove
+    or replace this component before saving.` Esperado.
+11. Export → descarga un JSON de 999 bytes con el schema actual.
+12. Deploy un BPMN con userTask `formKey="intake-request-form"`
+    via curl, instancia creada → `user_tasks.form_version = 2`,
+    `GET /user-tasks/:id` devuelve el form embebido con 5
+    componentes.
+13. Navegar a `/modeler/tasks/:id` → Viewer renderiza 5 inputs con
+    label "intake-request-form v2". Loop end-to-end cerrado.
+
+**Decisiones tomadas en sesión:**
+- Dedupe de preact en lugar de cambiar versiones de form-js o
+  reescribir el árbol de deps. Razón: invasivo mínimo, no toca
+  package.json del root, y form-js-viewer/editor son ambos
+  compatibles con preact 10.29.2 en runtime.
+- Tab JSON read-only en Sprint 1 del editor. Parsear el JSON
+  editado de vuelta al editor requiere validación contra
+  `schemaVersion`/imports y otro round-trip; queda para polish.
+- Integración con properties panel del BPMN modeler ("Open Form"
+  button junto al campo formKey) queda **fuera de scope** —
+  el plan la marcaba como opcional/nice-to-have. El usuario
+  puede navegar manualmente desde la tab Forms.
+
+**Pendiente / bloqueos:**
+- Endpoint `DELETE /forms/:key` no existe en backend; la columna
+  Actions sólo expone Edit por ahora.
+- Errores inline del Viewer (Sprint 1) siguen mostrando IDs
+  internos `Field_xxx` en lugar del key.
+
+**Próximos pasos sugeridos:**
+- Sprint 3: button "Open Form" en el properties panel del bpmn-js
+  modeler para saltar entre BPMN y form editor.
+- Polish: JSON editable con parse-back, Delete endpoint,
+  display de errores mejorado.
+
+---
 
 ### 2026-06-08 — Sprint 1 Forms (backend + frontend + smoke)
 
