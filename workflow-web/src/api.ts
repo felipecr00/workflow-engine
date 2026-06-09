@@ -192,8 +192,9 @@ export interface DefinitionInfo {
 
 export async function listDefinitions(): Promise<DefinitionInfo[]> {
   const res = await fetch(`${BASE}/definitions`);
+  if (!res.ok) throw new Error('Failed to list definitions');
   const body = await res.json();
-  return body.definitions as DefinitionInfo[];
+  return (body.definitions ?? []) as DefinitionInfo[];
 }
 
 export async function createInstance(
@@ -242,8 +243,9 @@ export async function listInstances(
   if (filter.definitionKey) params.set('definitionKey', filter.definitionKey);
   const qs = params.toString();
   const res = await fetch(`${BASE}/instances${qs ? '?' + qs : ''}`);
+  if (!res.ok) throw new Error('Failed to list instances');
   const body = await res.json();
-  return body.instances as InstanceSummary[];
+  return (body.instances ?? []) as InstanceSummary[];
 }
 
 export async function getInstance(id: string): Promise<InstanceSnapshot> {
@@ -264,8 +266,9 @@ export async function listIncidents(
   if (filter.activeOnly === false) params.set('activeOnly', 'false');
   const qs = params.toString();
   const res = await fetch(`${BASE}/incidents${qs ? '?' + qs : ''}`);
+  if (!res.ok) throw new Error('Failed to list incidents');
   const body = await res.json();
-  return body.incidents as IncidentInfo[];
+  return (body.incidents ?? []) as IncidentInfo[];
 }
 
 export interface UserTaskInfo {
@@ -397,8 +400,9 @@ export async function listUserTasks(
   if (filter.assignee) params.set('assignee', filter.assignee);
   const qs = params.toString();
   const res = await fetch(`${BASE}/user-tasks${qs ? '?' + qs : ''}`);
+  if (!res.ok) throw new Error('Failed to list user tasks');
   const body = await res.json();
-  return body.userTasks as UserTaskInfo[];
+  return (body.userTasks ?? []) as UserTaskInfo[];
 }
 
 export async function claimUserTask(

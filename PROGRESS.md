@@ -14,76 +14,44 @@ Registro acumulativo de sesiones de trabajo. **Más reciente primero.**
 
 ## Estado actual
 
-Sprints 1 y 2 de Forms **completos** en la rama `feat/forms-sprint-1`
-(no mergeada a `main`). El engine sigue en Phase 1–2; sobre esa base
-ahora hay una capa de forms con editor visual:
+**Migración React** de `workflow-web` completa en rama `feat/react-migration`
+(no pusheada). El monolito `main.ts` (2304 líneas) fue reemplazado por ~25
+componentes React 18 + React Router 6 + TanStack Query 5. Las 7 vistas
+funcionan idénticas a la versión vanilla. Build limpio, cero errores en
+consola.
 
-### Sprint 2 (nuevo)
+### Arquitectura nueva (`workflow-web/src/`)
+- **Entry:** `main.tsx` — React 18 `createRoot`, `createBrowserRouter`
+  con `basename: '/modeler'`, `QueryClientProvider`.
+- **Layout:** `components/Layout.tsx` (header + NavLink tabs + Outlet +
+  StatusBar), `components/StatusBar.tsx`, `components/Badge.tsx`,
+  `components/Modal.tsx`.
+- **Pages:** `HomePage`, `ModelerPage`, `InstancesPage`,
+  `InstanceDetailPage`, `TasksPage` (con sub-componentes en `tasks/`),
+  `FormsListPage`, `FormEditorPage`, `IncidentsPage`.
+- **Hooks:** `useStatus` (context), `useBpmnModeler`, `useBpmnViewer`,
+  `useFormEditor` (imperative wrappers), `usePersistedState`
+  (localStorage).
+- **Utils:** `utils.ts` (helpers extraídos de main.ts).
+- **api.ts** y **default-diagram.ts** sin cambios funcionales (solo
+  se añadió `!res.ok` checks en list functions para compatibilidad
+  con TanStack Query v5).
+- **CSS** sin cambios; se añadió `#root` junto a `#app` en los
+  selectores de layout.
 
-- Nueva tab **Forms** en el header con dos vistas: lista
-  (`/modeler/forms`) y editor visual (`/modeler/forms/new`,
-  `/modeler/forms/:key`).
-- Editor montado sobre `FormEditor` de `@bpmn-io/form-js` con
-  el layout de 3 columnas que ya trae la librería (palette,
-  canvas, properties panel).
-- Tabs Design / Preview / JSON: Preview re-importa el schema
-  actual en un `Form` Viewer, JSON serializa con
-  `JSON.stringify(schema, null, 2)` (read-only en este Sprint).
-- Save &amp; Deploy llama `POST /forms`; si el form contiene un
-  tipo no soportado server-side, el status muestra el mensaje
-  accionable con `field` y `type`.
-- Lifecycle del FormEditor protegido: cleanup en cambios de
-  ruta evita doble palette / leaks de instancias.
-- Bug-fix necesario para que el FormEditor renderizara: dedupe
-  de preact en Vite (`resolve.dedupe`). `form-js-editor`
-  pinea `preact &lt;= 10.15.1` y npm acababa instalando dos
-  copias; sin dedupe los hooks del FormEditor escribían contra
-  un registry distinto del que su renderer leía y el canvas
-  quedaba en blanco.
-
-### Sprint 1
-
-- Storage `forms` versionado por key con deploy idempotente
-  (deep-equal del schema). Columna `format` (`form-js` | `json-schema`)
-  + `tenant_id` con default `'default'` (sin enforcement multi-tenant).
-- Parser reconoce `<zeebe:formDefinition formKey|formId="…"/>` en
-  `bpmn:userTask`.
-- En `enterUserTask` el executor resuelve `findLatestFormByKey` y
-  hace snapshot de `form_key` + `form_version` en `user_tasks`. Si
-  el key no resuelve, se crea un incident `unhandled_error` con
-  mensaje accionable.
-- REST: `POST /forms`, `GET /forms`, `GET /forms/:key`,
-  `GET /forms/:key/versions/:version`, y nuevo `GET /user-tasks/:id`
-  que devuelve el task con el form embebido.
-- Validación server-side AJV vía un derivador form-js → JSON Schema
-  (subset Sprint 1: textfield/textarea/number/checkbox/datetime/
-  select/radio/taglist/checklist + validate.required/min/max/
-  minLength/maxLength/pattern). Forms con tipos no soportados se
-  rechazan con `400 unsupported_field_type` al deploy.
-  `POST /user-tasks/:id/complete` valida contra el snapshot del
-  form (no la última versión) y devuelve
-  `400 validation_failed` con `details: [{path, message}]`.
-- Frontend (`workflow-web`): si el task trae form, se monta un
-  `@bpmn-io/form-js` Form dinámicamente, con el schema embebido y
-  los `input_variables` como data inicial; el botón Complete usa
-  `form.submit()` y muestra los errores inline. Sin form, se mantiene
-  el fallback ad-hoc anterior.
-
-Suite: 72 tests (3 nuevos en parser, 8 en `forms.test.ts`, 8 en
-`user-tasks.test.ts` para el flujo con forms). Web build limpio.
+### Engine (`workflow-core/`)
+Sin cambios en esta sesión. Sprints 1 y 2 de Forms siguen en
+`feat/forms-sprint-1`.
 
 ## Pendientes inmediatos
 
-- [ ] Esperar review/aprobación para mergear `feat/forms-sprint-1` a `main`.
-- [ ] Aprobar/decidir los commits de Sprint 2 (los hay en la rama,
-      sin push).
-- [ ] **Sprint 3** — Picker de form en el properties panel del userTask
-      en el modeler bpmn-js (botón "Open Form" junto al campo formKey;
-      quedó fuera de scope en Sprint 2 por ser opcional).
-- [ ] Polish frontend Sprint 2: editor JSON editable con parse +
-      re-import, mejor display de errores de validación inline en el
-      Viewer (mapear `Field_xxx` → key), botón Delete en la lista
-      cuando exista `DELETE /forms/:key` en backend.
+- [ ] Review y aprobación de la rama `feat/react-migration` para push/merge.
+- [ ] Smoke con backend corriendo para verificar flujos end-to-end
+      (Modeler con diagrama real, Instance Detail con tokens, Tasks
+      con form-js viewer, Forms con deploy).
+- [ ] Mergear `feat/forms-sprint-1` a `main` (pendiente de sesiones
+      anteriores).
+- [ ] Sprint 3 Forms — Picker en properties panel del modeler.
 
 ## Tests flakies conocidos (pre-existentes)
 
@@ -95,6 +63,60 @@ Suite: 72 tests (3 nuevos en parser, 8 en `forms.test.ts`, 8 en
 ---
 
 ## Sesiones
+
+### 2026-06-09 — Migración React de workflow-web
+
+**Objetivo:** Migrar `workflow-web` de vanilla TypeScript monolítico
+(2304 líneas en `main.ts`) a React 18 + React Router 6 + TanStack Query 5.
+Refactor puro de arquitectura — sin cambios funcionales ni visuales.
+
+**Hecho:**
+- Instalación de deps: `react`, `react-dom`, `react-router-dom`,
+  `@tanstack/react-query`, `@vitejs/plugin-react@4`, `@types/react`,
+  `@types/react-dom`.
+- Configuración: `vite.config.ts` con plugin React +
+  `jsxImportSource: 'react'` (coexistencia con preact de form-js),
+  `tsconfig.json` actualizado, `index.html` reducido a `<div id="root">`.
+- 7 pages: `HomePage`, `ModelerPage`, `InstancesPage`,
+  `InstanceDetailPage`, `TasksPage` (+ 5 sub-componentes en `tasks/`),
+  `FormsListPage`, `FormEditorPage`, `IncidentsPage`.
+- 4 hooks imperativos: `useBpmnModeler`, `useBpmnViewer`,
+  `useFormEditor`, `usePersistedState`.
+- 4 componentes compartidos: `Layout`, `StatusBar`, `Badge`, `Modal`.
+- `utils.ts` con helpers extraídos (`fmtDate`, `truncate`, `cap`, etc.).
+- Router con basename `/modeler`, redirect `/user-tasks` → `/tasks`.
+- Fix en `api.ts`: añadidos `!res.ok` checks + `?? []` fallbacks en
+  `listIncidents`, `listInstances`, `listDefinitions`, `listUserTasks`
+  para compatibilidad con TanStack Query v5 (no permite `undefined`).
+- Eliminado `main-legacy.ts`, eliminado componente `Placeholder`.
+
+**Smoke visual (via Preview MCP, sin backend):**
+1. **Home** (`/modeler/`) — Breadcrumbs "Home", botones New Folder +
+   New Diagram, status bar "0 folder(s), 0 diagram(s)". ✓
+2. **Instances** (`/modeler/instances`) — Dropdown "All states",
+   Refresh, Start Instance, status bar "0 instance(s) loaded". ✓
+3. **Tasklist** (`/modeler/tasks`) — Layout 3 columnas (sidebar con
+   sort "Newest First" + Filters, center "Select a task", info panel
+   "Task details will appear here"), status bar "0 task(s) loaded". ✓
+4. **Forms** (`/modeler/forms`) — Refresh + New Form, empty state. ✓
+5. **Form Editor** (`/modeler/forms/new`) — Palette izquierda con 22+
+   componentes, canvas central, properties panel derecha, tabs
+   Design/Preview/JSON, botones Export + Save & Deploy. ✓
+6. **Incidents** (`/modeler/incidents`) — Refresh, empty state
+   "No incidents found". ✓
+7. **Navegación** — Todos los tabs del header funcionan,
+   NavLink activo se subraya correctamente.
+8. **Consola** — Cero errores en todas las vistas.
+
+**No verificado (requiere backend corriendo):**
+- Modeler con diagrama real (load/save/deploy BPMN).
+- Instance Detail con tokens y overlays.
+- Tasks con form-js viewer y complete flow.
+- Forms deploy end-to-end.
+
+**Build:** `vite build` limpio (warnings esperados de chunk size).
+
+---
 
 ### 2026-06-08 — Sprint 2 Forms Editor (vista list + editor visual)
 

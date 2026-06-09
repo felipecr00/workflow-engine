@@ -72,7 +72,7 @@
   box-sizing: border-box;
 }
 
-html, body, #app {
+html, body, #app, #root {
   height: 100%;
   font-family: var(--font-ui);
   font-size: 14px;
@@ -80,7 +80,7 @@ html, body, #app {
   background: var(--bg-default);
 }
 
-#app {
+#app, #root {
   display: flex;
   flex-direction: column;
 }
@@ -123,6 +123,7 @@ html, body, #app {
   font-size: 0.875rem;
   font-family: var(--font-ui);
   font-weight: 400;
+  text-decoration: none;
   border-bottom: 2px solid transparent;
   transition: color 0.15s, border-color 0.15s, font-weight 0.15s;
   min-height: 36px;
@@ -1399,19 +1400,18 @@ tr:hover td { background: var(--bg-subtle); }
   min-height: 0;
 }
 
-#tasks-info-content { padding: 16px; }
+#tasks-info-content { padding: 20px 24px; }
 
-.info-section { margin-bottom: 20px; }
+.info-section { margin-bottom: 28px; }
+.info-section:last-child { margin-bottom: 0; }
 
 .info-section-title {
   font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--text-secondary);
-  margin-bottom: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--divider);
+  margin-bottom: 12px;
 }
 
 .info-row {
@@ -1419,7 +1419,7 @@ tr:hover td { background: var(--bg-subtle); }
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  padding: 5px 0;
+  padding: 8px 0;
   font-size: 0.8125rem;
 }
 
