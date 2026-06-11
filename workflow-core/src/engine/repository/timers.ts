@@ -90,3 +90,16 @@ export async function listTimersForInstance(
     .execute();
   return rows as TimerRow[];
 }
+
+export async function cancelAllPendingTimersForInstance(
+  db: Kysely<Database>,
+  instanceId: string,
+): Promise<number> {
+  const result = await db
+    .updateTable("timers")
+    .set({ state: "cancelled", updated_at: new Date() })
+    .where("instance_id", "=", instanceId)
+    .where("state", "=", "active")
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0);
+}

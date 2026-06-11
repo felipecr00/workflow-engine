@@ -248,7 +248,7 @@ export class Engine {
     const parsed = await parseProcess(bpmnXml);
     for (const el of parsed.elements.values()) {
       if (
-        el.type === 'serviceTask' &&
+        (el.type === 'serviceTask' || el.type === 'sendTask') &&
         !this.handlers.has(el.taskDefinition.type)
       ) {
         throw new Error(

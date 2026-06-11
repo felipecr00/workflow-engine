@@ -1,0 +1,17 @@
+{{- if and .Values.ingress.enabled (eq .Values.ingress.className "gce") -}}
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ include "workflow-engine.fullname" . }}
+  labels:
+    {{- include "workflow-engine.labels" . | nindent 4 }}
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /health
+    port: {{ .Values.engine.port }}
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+{{- end -}}

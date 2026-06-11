@@ -1,0 +1,90 @@
+# Non-prod defaults for GKE Autopilot.
+# Override per environment with -f values.<env>.yaml.
+
+image:
+  repository: REPLACE_ME-docker.pkg.dev/REPLACE_ME/workflow/engine
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Single-replica engine. Don't scale this without first auditing the executor's
+# locking model — it's safe (FOR UPDATE SKIP LOCKED) but uncharted in this chart.
+replicaCount: 1
+
+engine:
+  port: 3000
+  # Extra env passed straight to the Deployment (key/value strings only).
+  extraEnv: {}
+    # LOG_SQL: "true"
+    # JOB_POLL_INTERVAL_MS: "250"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+postgres:
+  # Postgres runs in-cluster as a StatefulSet. NOT for production.
+  enabled: true
+  image: postgres:16
+  database: workflow
+  username: workflow
+  # If empty, a random password is generated on first install and stored in a Secret.
+  # On upgrades, the existing Secret value is reused (no rotation).
+  password: ""
+  port: 5432
+  storage:
+    size: 5Gi
+    storageClassName: standard-rwo
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+migrate:
+  # Runs as a Helm pre-install/pre-upgrade hook. Disable to apply migrations manually.
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: gce
+  # If host is empty, the chart renders workflow.<loadBalancerIP>.nip.io.
+  # Reserve a global static IP first:
+  #   gcloud compute addresses create workflow-engine-ip --global
+  #   gcloud compute addresses describe workflow-engine-ip --global --format='value(address)'
+  # Then set loadBalancerIP below.
+  loadBalancerIP: ""
+  host: ""
+  # Name of a pre-created global static IP (gcloud compute addresses create ... --global).
+  # GKE Ingress will attach this IP to the load balancer.
+  globalStaticIpName: "workflow-engine-ip"
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]

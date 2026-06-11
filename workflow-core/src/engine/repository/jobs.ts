@@ -213,3 +213,25 @@ export async function listJobsForInstance(
     .execute();
   return rows as JobRow[];
 }
+
+// Used by Terminate End Events. Cancels jobs that are still in-flight; ones
+// already 'completed', 'incident' or 'cancelled' are left untouched. A worker
+// that subsequently completes an 'active' job we cancel here will fail the
+// completion guard (state != 'active'), which is the desired behaviour.
+export async function cancelAllOpenJobsForInstance(
+  db: Kysely<Database>,
+  instanceId: string,
+): Promise<number> {
+  const result = await db
+    .updateTable("jobs")
+    .set({
+      state: "cancelled",
+      worker_id: null,
+      lock_expires_at: null,
+      updated_at: new Date(),
+    })
+    .where("instance_id", "=", instanceId)
+    .where("state", "in", ["pending", "active", "failed"])
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0);
+}

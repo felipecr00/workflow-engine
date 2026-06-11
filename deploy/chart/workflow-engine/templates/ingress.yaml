@@ -1,0 +1,33 @@
+{{- if .Values.ingress.enabled -}}
+{{- $host := include "workflow-engine.ingressHost" . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "workflow-engine.fullname" . }}
+  labels:
+    {{- include "workflow-engine.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+    {{- if and (eq .Values.ingress.className "gce") .Values.ingress.globalStaticIpName }}
+    kubernetes.io/ingress.global-static-ip-name: {{ .Values.ingress.globalStaticIpName | quote }}
+    {{- end }}
+spec:
+  defaultBackend:
+    service:
+      name: {{ include "workflow-engine.fullname" . }}
+      port:
+        number: {{ .Values.service.port }}
+  {{- if $host }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "workflow-engine.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+  {{- end }}
+{{- end -}}

@@ -98,3 +98,19 @@ export async function listAllTokensForInstance(
     .execute();
   return rows as TokenRow[];
 }
+
+// Used by Terminate End Events: flip every live token of an instance to
+// 'cancelled' in a single statement and return how many were retired so the
+// caller can include it in the audit metadata.
+export async function cancelAllLiveTokensForInstance(
+  db: Kysely<Database>,
+  instanceId: string,
+): Promise<number> {
+  const result = await db
+    .updateTable("tokens")
+    .set({ state: "cancelled", updated_at: new Date() })
+    .where("instance_id", "=", instanceId)
+    .where("state", "in", ["active", "waiting", "incident"])
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0);
+}

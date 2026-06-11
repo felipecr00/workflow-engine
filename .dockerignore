@@ -1,0 +1,37 @@
+# Dependencies (re-installed per build stage)
+**/node_modules
+
+# Build artefacts (re-generated)
+**/dist
+**/.cache
+**/coverage
+
+# Tests (not needed in image)
+workflow-core/tests
+**/*.test.ts
+**/vitest.config.ts
+
+# Local dev / editor
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+**/.env
+**/.env.*
+
+# Docs / progress (not needed at runtime)
+README.md
+PROGRESS.md
+CLAUDE.md
+
+# Deploy artefacts (not needed inside the image)
+deploy
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Misc
+**/*.log
+**/npm-debug.log*

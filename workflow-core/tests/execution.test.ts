@@ -131,6 +131,87 @@ describe("engine execution (happy path)", () => {
     expect(auditTypes).toContain("INCIDENT_CREATED");
   });
 
+  it("runs a SendTask job via the same handler mechanism as a ServiceTask", async () => {
+    const SEND_TASK_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <bpmn:process id="send-task-test" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:sendTask id="SendMail">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="send-mail" retries="1" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="SendMail"/>
+    <bpmn:sequenceFlow id="F2" sourceRef="SendMail" targetRef="End"/>
+  </bpmn:process>
+</bpmn:definitions>`;
+
+    let received: unknown = null;
+    engine.registerHandler("send-mail", (ctx) => {
+      received = ctx.variables;
+      return { sent: true };
+    });
+    await engine.deploy(SEND_TASK_BPMN);
+    const inst = await engine.createInstance("send-task-test", { to: "alice" });
+    await engine.runOneTick();
+
+    const snap = await engine.getInstance(inst.id);
+    expect(snap?.state).toBe("completed");
+    expect(snap?.variables).toMatchObject({ to: "alice", sent: true });
+    expect(received).toMatchObject({ to: "alice" });
+
+    const sendCreated = snap!.audit.find(
+      (a) => a.event_type === "SEND_TASK_JOB_CREATED",
+    );
+    expect(sendCreated).toBeDefined();
+    expect((sendCreated!.metadata as { kind?: string }).kind).toBe("send");
+
+    const sendCompleted = snap!.audit.find(
+      (a) =>
+        a.event_type === "JOB_COMPLETED" &&
+        (a.metadata as { kind?: string }).kind === "send",
+    );
+    expect(sendCompleted).toBeDefined();
+  });
+
+  it("walks through an IntermediateThrowEvent None without blocking", async () => {
+    const THROW_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <bpmn:process id="throw-test" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:intermediateThrowEvent id="Checkpoint" name="midway">
+      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+    </bpmn:intermediateThrowEvent>
+    <bpmn:serviceTask id="After">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="after-throw" retries="1" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>F2</bpmn:incoming><bpmn:outgoing>F3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End"><bpmn:incoming>F3</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Checkpoint"/>
+    <bpmn:sequenceFlow id="F2" sourceRef="Checkpoint" targetRef="After"/>
+    <bpmn:sequenceFlow id="F3" sourceRef="After" targetRef="End"/>
+  </bpmn:process>
+</bpmn:definitions>`;
+
+    engine.registerHandler("after-throw", () => ({ ok: true }));
+    await engine.deploy(THROW_BPMN);
+    const inst = await engine.createInstance("throw-test", {});
+    await engine.runOneTick();
+
+    const snap = await engine.getInstance(inst.id);
+    expect(snap?.state).toBe("completed");
+
+    const throwAudit = snap!.audit.find((a) => a.event_type === "THROW_EVENT_NONE");
+    expect(throwAudit).toBeDefined();
+    expect(throwAudit!.element_id).toBe("Checkpoint");
+  });
+
   it("can run the job runner on its interval (auto-start)", async () => {
     await engine.stop();
     engine = new Engine({

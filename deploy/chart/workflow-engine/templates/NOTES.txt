@@ -1,0 +1,25 @@
+workflow-engine deployed in namespace {{ .Release.Namespace }}.
+
+1. Pods:
+   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Database URL (Secret):
+   kubectl get secret -n {{ .Release.Namespace }} {{ include "workflow-engine.fullname" . }}-db \
+     -o jsonpath='{.data.DATABASE_URL}' | base64 -d; echo
+
+3. Reach the app:
+{{- if .Values.ingress.enabled }}
+  {{- $host := include "workflow-engine.ingressHost" . }}
+  {{- if $host }}
+   Ingress host: http://{{ $host }}
+   (DNS via nip.io — may take a few minutes for the GKE LB to be ready)
+  {{- else }}
+   Ingress is enabled but no host could be rendered. Set either
+     ingress.host
+     ingress.loadBalancerIP   (combined with a pre-reserved static IP)
+  {{- end }}
+{{- else }}
+   Port-forward:
+     kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "workflow-engine.fullname" . }} 8080:{{ .Values.service.port }}
+   Then open: http://localhost:8080
+{{- end }}

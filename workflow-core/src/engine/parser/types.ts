@@ -18,9 +18,17 @@ export type ElementType =
   | "endEvent"
   | "serviceTask"
   | "userTask"
+  | "manualTask"
+  | "sendTask"
   | "exclusiveGateway"
   | "parallelGateway"
-  | "intermediateCatchEvent";
+  | "intermediateCatchEvent"
+  | "intermediateThrowEvent";
+
+// EndEvent has three variants in Sprint 3. Structurally identical (incoming
+// flows, no outgoing) so we keep one element type and switch by kind in the
+// executor.
+export type EndEventKind = "none" | "terminate" | "error";
 
 export type TimerKind = "duration" | "date";
 
@@ -44,12 +52,26 @@ export interface StartEventElement extends BaseElement {
 
 export interface EndEventElement extends BaseElement {
   type: "endEvent";
+  endEventKind: EndEventKind;
+  // Populated only when endEventKind === "error". Resolved from the
+  // bpmn:Error referenced via errorRef on the EventDefinition.
+  errorCode?: string;
 }
 
 export interface ServiceTaskElement extends BaseElement {
   type: "serviceTask";
   taskDefinition: TaskDefinition;
   ioMapping?: IoMapping;
+}
+
+export interface SendTaskElement extends BaseElement {
+  type: "sendTask";
+  taskDefinition: TaskDefinition;
+  ioMapping?: IoMapping;
+}
+
+export interface ManualTaskElement extends BaseElement {
+  type: "manualTask";
 }
 
 export interface ExclusiveGatewayElement extends BaseElement {
@@ -80,14 +102,21 @@ export interface IntermediateCatchEventElement extends BaseElement {
   timer: TimerDefinition;
 }
 
+export interface IntermediateThrowEventElement extends BaseElement {
+  type: "intermediateThrowEvent";
+}
+
 export type ProcessElement =
   | StartEventElement
   | EndEventElement
   | ServiceTaskElement
   | UserTaskElement
+  | ManualTaskElement
+  | SendTaskElement
   | ExclusiveGatewayElement
   | ParallelGatewayElement
-  | IntermediateCatchEventElement;
+  | IntermediateCatchEventElement
+  | IntermediateThrowEventElement;
 
 export interface SequenceFlow {
   id: string;

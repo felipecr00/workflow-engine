@@ -3,11 +3,15 @@ import { sql } from "kysely";
 import type { Database } from "../db/types";
 import { evaluateBoolean } from "../expressions";
 import type {
+  EndEventElement,
   ExclusiveGatewayElement,
   InternalProcessDefinition,
   IntermediateCatchEventElement,
+  IntermediateThrowEventElement,
+  ManualTaskElement,
   ParallelGatewayElement,
   ProcessElement,
+  SendTaskElement,
   SequenceFlow,
   ServiceTaskElement,
   UserTaskElement,
@@ -19,16 +23,27 @@ import { createIncident } from "../repository/incidents";
 import {
   findInstance,
   markInstanceCompleted,
+  markInstanceTerminated,
   setInstanceVariables,
 } from "../repository/instances";
-import { createJob, findJob, markJobCompleted } from "../repository/jobs";
 import {
+  cancelAllOpenJobsForInstance,
+  createJob,
+  findJob,
+  markJobCompleted,
+} from "../repository/jobs";
+import {
+  cancelAllOpenUserTasksForInstance,
   createUserTask,
   findUserTask,
   markUserTaskCompleted,
 } from "../repository/user-tasks";
-import { createTimer } from "../repository/timers";
 import {
+  cancelAllPendingTimersForInstance,
+  createTimer,
+} from "../repository/timers";
+import {
+  cancelAllLiveTokensForInstance,
   createToken,
   findToken,
   listLiveTokensForInstance,
@@ -106,11 +121,20 @@ async function stepElement(
     case "serviceTask":
       return await enterServiceTask(trx, element, token, variables);
 
+    case "sendTask":
+      return await enterSendTask(trx, element, token, variables);
+
     case "userTask":
       return await enterUserTask(trx, element, token, variables);
 
+    case "manualTask":
+      return await enterManualTask(trx, element, token);
+
     case "intermediateCatchEvent":
       return await enterTimerCatch(trx, element, token);
+
+    case "intermediateThrowEvent":
+      return await stepIntermediateThrow(trx, def, element, token);
 
     case "exclusiveGateway":
       return await stepExclusiveGateway(trx, def, element, token, variables);
@@ -118,31 +142,138 @@ async function stepElement(
     case "parallelGateway":
       return await stepParallelGateway(trx, def, element, token);
 
-    case "endEvent": {
-      await setTokenState(trx, token.id, "completed");
-      await recordAudit(trx, {
-        instanceId: token.instance_id,
-        tokenId: token.id,
-        eventType: "TOKEN_COMPLETED",
-        elementId: element.id,
-        elementType: element.type,
-      });
-      const live = await listLiveTokensForInstance(trx, token.instance_id);
-      if (live.length === 0) {
-        await markInstanceCompleted(trx, token.instance_id);
-        await recordAudit(trx, {
-          instanceId: token.instance_id,
-          eventType: "INSTANCE_COMPLETED",
-        });
-      }
-      return null;
-    }
+    case "endEvent":
+      return await stepEndEvent(trx, element, token);
 
     default: {
       const t: never = element;
       throw new ExecutionError(`Unhandled element ${(t as ProcessElement).type}`);
     }
   }
+}
+
+async function stepEndEvent(
+  trx: Trx,
+  element: EndEventElement,
+  token: { id: string; instance_id: string },
+): Promise<null> {
+  switch (element.endEventKind) {
+    case "none":
+      return await endNone(trx, element, token);
+    case "terminate":
+      return await terminateInstance(trx, element, token);
+    case "error":
+      return await raiseErrorEnd(trx, element, token);
+  }
+}
+
+async function endNone(
+  trx: Trx,
+  element: EndEventElement,
+  token: { id: string; instance_id: string },
+): Promise<null> {
+  await setTokenState(trx, token.id, "completed");
+  await recordAudit(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    eventType: "TOKEN_COMPLETED",
+    elementId: element.id,
+    elementType: element.type,
+  });
+  const live = await listLiveTokensForInstance(trx, token.instance_id);
+  if (live.length === 0) {
+    await markInstanceCompleted(trx, token.instance_id);
+    await recordAudit(trx, {
+      instanceId: token.instance_id,
+      eventType: "INSTANCE_COMPLETED",
+    });
+  }
+  return null;
+}
+
+// Terminate End Event: cancel every live token, every open job, every active
+// timer and every open user task of this instance, then flip the instance to
+// 'terminated'. The terminating token itself is rolled into the bulk cancel.
+async function terminateInstance(
+  trx: Trx,
+  element: EndEventElement,
+  token: { id: string; instance_id: string },
+): Promise<null> {
+  const cancelledTokens = await cancelAllLiveTokensForInstance(trx, token.instance_id);
+  const cancelledJobs = await cancelAllOpenJobsForInstance(trx, token.instance_id);
+  const cancelledTimers = await cancelAllPendingTimersForInstance(trx, token.instance_id);
+  const cancelledUserTasks = await cancelAllOpenUserTasksForInstance(trx, token.instance_id);
+
+  await markInstanceTerminated(trx, token.instance_id);
+
+  await recordAudit(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    eventType: "TOKEN_COMPLETED",
+    elementId: element.id,
+    elementType: element.type,
+    metadata: { cancelledBy: "terminate_end_event", terminatedBy: element.id },
+  });
+  await recordAudit(trx, {
+    instanceId: token.instance_id,
+    eventType: "INSTANCE_TERMINATED",
+    elementId: element.id,
+    elementType: element.type,
+    metadata: {
+      terminatedBy: element.id,
+      cancelledTokens,
+      cancelledJobs,
+      cancelledTimers,
+      cancelledUserTasks,
+    },
+  });
+  return null;
+}
+
+// Error End Event (Sprint 3 semantics): raise an incident and stop the token.
+// The instance stays active if other tokens are still live. A later sprint
+// will redirect the token to a matching boundary error catch when present.
+async function raiseErrorEnd(
+  trx: Trx,
+  element: EndEventElement,
+  token: { id: string; instance_id: string },
+): Promise<null> {
+  await setTokenState(trx, token.id, "incident");
+  const incident = await createIncident(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    type: "error_end_event",
+    errorMessage: `Error end event ${element.id} raised: errorCode=${element.errorCode ?? "(none)"}`,
+  });
+  await recordAudit(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    incidentId: incident.id,
+    eventType: "INCIDENT_CREATED",
+    elementId: element.id,
+    elementType: element.type,
+    metadata: { reason: "error_end_event", errorCode: element.errorCode },
+  });
+  return null;
+}
+
+async function stepIntermediateThrow(
+  trx: Trx,
+  def: InternalProcessDefinition,
+  element: IntermediateThrowEventElement,
+  token: { id: string; instance_id: string },
+): Promise<string> {
+  // None throw events have no side effect — they're a tracing checkpoint.
+  // We log a dedicated audit row so traces can show "the process reached the
+  // throw" without confusing it with a generic token transition.
+  await recordAudit(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    eventType: "THROW_EVENT_NONE",
+    elementId: element.id,
+    elementType: element.type,
+  });
+  return await singleOutFollow(trx, def, element, token);
 }
 
 async function singleOutFollow(
@@ -184,6 +315,67 @@ async function enterServiceTask(
     elementId: element.id,
     elementType: element.type,
     metadata: { jobType: element.taskDefinition.type },
+  });
+  return null;
+}
+
+// SendTask shares the ServiceTask machinery: a handler keyed by jobType
+// pulls the job from the queue, runs, and reports the result. The only
+// differences live in the audit trail (SEND_TASK_JOB_CREATED + kind=send),
+// so downstream queries can isolate sends without inspecting elements.
+async function enterSendTask(
+  trx: Trx,
+  element: SendTaskElement,
+  token: { id: string; instance_id: string },
+  variables: Record<string, unknown>,
+): Promise<null> {
+  const input = applyInputMapping(element.ioMapping, variables);
+  const job = await createJob(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    elementId: element.id,
+    jobType: element.taskDefinition.type,
+    inputVariables: input,
+    retries: element.taskDefinition.retries,
+  });
+  await setTokenState(trx, token.id, "waiting");
+  await recordAudit(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    jobId: job.id,
+    eventType: "SEND_TASK_JOB_CREATED",
+    elementId: element.id,
+    elementType: element.type,
+    metadata: { jobType: element.taskDefinition.type, kind: "send" },
+  });
+  return null;
+}
+
+// ManualTask reuses the user_tasks table — same lifecycle (created →
+// completed) and same complete endpoint. element_type='manualTask' on the
+// row distinguishes it from genuine user_tasks. No assignee, no form, no
+// ioMapping in Sprint 3.
+async function enterManualTask(
+  trx: Trx,
+  element: ManualTaskElement,
+  token: { id: string; instance_id: string },
+): Promise<null> {
+  const userTask = await createUserTask(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    elementId: element.id,
+    taskName: element.name,
+    candidateGroups: [],
+    inputVariables: {},
+  });
+  await setTokenState(trx, token.id, "waiting");
+  await recordAudit(trx, {
+    instanceId: token.instance_id,
+    tokenId: token.id,
+    eventType: "MANUAL_TASK_CREATED",
+    elementId: element.id,
+    elementType: element.type,
+    metadata: { userTaskId: userTask.id },
   });
   return null;
 }
@@ -520,9 +712,9 @@ export async function completeServiceTask(
   const def = defs.get(instance.definition_id);
   if (!def) throw new ExecutionError(`Definition not loaded for instance ${instance.id}`);
   const element = def.elements.get(token.element_id);
-  if (!element || element.type !== "serviceTask") {
+  if (!element || (element.type !== "serviceTask" && element.type !== "sendTask")) {
     throw new ExecutionError(
-      `Token ${token.id} is not at a service task (got ${element?.type})`,
+      `Token ${token.id} is not at a service or send task (got ${element?.type})`,
     );
   }
 
@@ -537,6 +729,7 @@ export async function completeServiceTask(
     eventType: "JOB_COMPLETED",
     elementId: element.id,
     elementType: element.type,
+    metadata: element.type === "sendTask" ? { kind: "send" } : undefined,
   });
 
   await setTokenState(trx, token.id, "active");
@@ -614,20 +807,24 @@ export async function completeUserTaskAction(
   const def = defs.get(instance.definition_id);
   if (!def) throw new ExecutionError(`Definition not loaded for instance ${instance.id}`);
   const element = def.elements.get(token.element_id);
-  if (!element || element.type !== "userTask") {
+  if (!element || (element.type !== "userTask" && element.type !== "manualTask")) {
     throw new ExecutionError(
-      `Token ${token.id} is not at a user task (got ${element?.type})`,
+      `Token ${token.id} is not at a user or manual task (got ${element?.type})`,
     );
   }
 
-  const newVars = applyOutputMapping(element.ioMapping, params.result, instance.variables);
+  // ManualTask has no ioMapping in this version; applyOutputMapping with an
+  // undefined mapping just merges params.result into variables.
+  const ioMapping = element.type === "userTask" ? element.ioMapping : undefined;
+  const newVars = applyOutputMapping(ioMapping, params.result, instance.variables);
   await setInstanceVariables(trx, instance.id, newVars);
 
   await markUserTaskCompleted(trx, userTask.id, params.result);
   await recordAudit(trx, {
     instanceId: instance.id,
     tokenId: token.id,
-    eventType: "USER_TASK_COMPLETED",
+    eventType:
+      element.type === "manualTask" ? "MANUAL_TASK_COMPLETED" : "USER_TASK_COMPLETED",
     elementId: element.id,
     elementType: element.type,
     metadata: { userTaskId: userTask.id },
