@@ -115,3 +115,15 @@ export async function markInstanceCompleted(
     .where('id', '=', id)
     .execute();
 }
+
+export async function markInstanceTerminated(
+  db: Kysely<Database>,
+  id: string,
+): Promise<void> {
+  const now = new Date();
+  await db
+    .updateTable('process_instances')
+    .set({ state: 'terminated', updated_at: now, ended_at: now })
+    .where('id', '=', id)
+    .execute();
+}

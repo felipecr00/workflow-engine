@@ -12,6 +12,7 @@ export type AuditEventType =
   | "JOB_ACTIVATED"
   | "JOB_COMPLETED"
   | "JOB_FAILED"
+  | "JOB_CANCELLED"
   | "JOB_RETRIES_EXHAUSTED"
   | "TIMER_CREATED"
   | "TIMER_FIRED"
@@ -22,7 +23,11 @@ export type AuditEventType =
   | "USER_TASK_CREATED"
   | "USER_TASK_CLAIMED"
   | "USER_TASK_COMPLETED"
-  | "USER_TASK_CANCELLED";
+  | "USER_TASK_CANCELLED"
+  | "MANUAL_TASK_CREATED"
+  | "MANUAL_TASK_COMPLETED"
+  | "SEND_TASK_JOB_CREATED"
+  | "THROW_EVENT_NONE";
 
 export interface AuditEventRow {
   id: string;

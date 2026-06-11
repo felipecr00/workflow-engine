@@ -1,6 +1,7 @@
 import { parseXml, type ModdleElement } from "./moddle";
 import type {
   AssignmentDefinition,
+  EndEventKind,
   InternalProcessDefinition,
   IoMapping,
   ProcessElement,
@@ -22,9 +23,12 @@ const SUPPORTED_TYPES = new Set([
   "bpmn:EndEvent",
   "bpmn:ServiceTask",
   "bpmn:UserTask",
+  "bpmn:ManualTask",
+  "bpmn:SendTask",
   "bpmn:ExclusiveGateway",
   "bpmn:ParallelGateway",
   "bpmn:IntermediateCatchEvent",
+  "bpmn:IntermediateThrowEvent",
   "bpmn:SequenceFlow",
 ]);
 
@@ -53,6 +57,20 @@ export async function parseProcess(xml: string): Promise<InternalProcessDefiniti
     throw new ParseError("bpmn:Process is missing required @id attribute");
   }
 
+  // bpmn:Error declarations live at the bpmn:Definitions level (siblings of
+  // bpmn:Process), not inside the process. The modeler writes them whenever
+  // an EndEvent / EventDefinition references an errorRef. Build a lookup
+  // table now so the EndEvent parser can resolve errorRef → errorCode.
+  const errorById = new Map<string, { errorCode: string | undefined; name: string | undefined }>();
+  for (const root of roots) {
+    if (root.$type === "bpmn:Error" && typeof root.id === "string") {
+      errorById.set(root.id, {
+        errorCode: typeof root.errorCode === "string" ? root.errorCode : undefined,
+        name: typeof root.name === "string" ? root.name : undefined,
+      });
+    }
+  }
+
   const flowElements = (proc.flowElements as ModdleElement[] | undefined) ?? [];
   const elements = new Map<string, ProcessElement>();
   const flows: SequenceFlow[] = [];
@@ -76,22 +94,47 @@ export async function parseProcess(xml: string): Promise<InternalProcessDefiniti
         });
         break;
 
-      case "bpmn:EndEvent":
+      case "bpmn:EndEvent": {
+        const { kind, errorCode } = readEndEventKind(el, errorById);
         elements.set(el.id, {
           id: el.id,
           type: "endEvent",
           name: el.name as string | undefined,
+          endEventKind: kind,
+          errorCode,
         });
         break;
+      }
 
       case "bpmn:ServiceTask": {
-        const { taskDefinition, ioMapping } = readServiceTaskExtensions(el);
+        const { taskDefinition, ioMapping } = readServiceTaskExtensions(el, "ServiceTask");
         elements.set(el.id, {
           id: el.id,
           type: "serviceTask",
           name: el.name as string | undefined,
           taskDefinition,
           ioMapping,
+        });
+        break;
+      }
+
+      case "bpmn:SendTask": {
+        const { taskDefinition, ioMapping } = readServiceTaskExtensions(el, "SendTask");
+        elements.set(el.id, {
+          id: el.id,
+          type: "sendTask",
+          name: el.name as string | undefined,
+          taskDefinition,
+          ioMapping,
+        });
+        break;
+      }
+
+      case "bpmn:ManualTask": {
+        elements.set(el.id, {
+          id: el.id,
+          type: "manualTask",
+          name: el.name as string | undefined,
         });
         break;
       }
@@ -135,6 +178,22 @@ export async function parseProcess(xml: string): Promise<InternalProcessDefiniti
           type: "intermediateCatchEvent",
           name: el.name as string | undefined,
           timer,
+        });
+        break;
+      }
+
+      case "bpmn:IntermediateThrowEvent": {
+        const defs = (el.eventDefinitions as ModdleElement[] | undefined) ?? [];
+        if (defs.length > 0) {
+          const def = defs[0]!;
+          throw new ParseError(
+            `IntermediateThrowEvent ${el.id}: only None throw events are supported in this version (got ${def.$type}). Message/Signal/Error throws come in a later sprint.`,
+          );
+        }
+        elements.set(el.id, {
+          id: el.id,
+          type: "intermediateThrowEvent",
+          name: el.name as string | undefined,
         });
         break;
       }
@@ -195,6 +254,20 @@ export async function parseProcess(xml: string): Promise<InternalProcessDefiniti
           );
         }
         break;
+      case "sendTask":
+        if (outgoing !== 1) {
+          throw new ParseError(
+            `SendTask ${el.id} must have exactly one outgoing flow (got ${outgoing})`,
+          );
+        }
+        break;
+      case "manualTask":
+        if (outgoing !== 1) {
+          throw new ParseError(
+            `ManualTask ${el.id} must have exactly one outgoing flow (got ${outgoing})`,
+          );
+        }
+        break;
       case "userTask":
         if (outgoing !== 1) {
           throw new ParseError(
@@ -206,6 +279,18 @@ export async function parseProcess(xml: string): Promise<InternalProcessDefiniti
         if (outgoing !== 1) {
           throw new ParseError(
             `IntermediateCatchEvent ${el.id} must have exactly one outgoing flow`,
+          );
+        }
+        break;
+      case "intermediateThrowEvent":
+        if (outgoing !== 1) {
+          throw new ParseError(
+            `IntermediateThrowEvent ${el.id} must have exactly one outgoing flow (got ${outgoing})`,
+          );
+        }
+        if (incoming !== 1) {
+          throw new ParseError(
+            `IntermediateThrowEvent ${el.id} must have exactly one incoming flow (got ${incoming})`,
           );
         }
         break;
@@ -308,7 +393,10 @@ function readTimerDefinition(el: ModdleElement): TimerDefinition {
   );
 }
 
-function readServiceTaskExtensions(task: ModdleElement): {
+function readServiceTaskExtensions(
+  task: ModdleElement,
+  label: "ServiceTask" | "SendTask",
+): {
   taskDefinition: TaskDefinition;
   ioMapping?: IoMapping;
 } {
@@ -323,7 +411,7 @@ function readServiceTaskExtensions(task: ModdleElement): {
       const type = v.type;
       if (typeof type !== "string" || type.length === 0) {
         throw new ParseError(
-          `ServiceTask ${task.id ?? "?"} is missing zeebe:taskDefinition @type`,
+          `${label} ${task.id ?? "?"} is missing zeebe:taskDefinition @type`,
         );
       }
       const retriesRaw = v.retries;
@@ -345,11 +433,55 @@ function readServiceTaskExtensions(task: ModdleElement): {
 
   if (!taskDefinition) {
     throw new ParseError(
-      `ServiceTask ${task.id ?? "?"} is missing required zeebe:taskDefinition extension`,
+      `${label} ${task.id ?? "?"} is missing required zeebe:taskDefinition extension`,
     );
   }
 
   return { taskDefinition, ioMapping };
+}
+
+function readEndEventKind(
+  el: ModdleElement,
+  errorById: Map<string, { errorCode: string | undefined; name: string | undefined }>,
+): { kind: EndEventKind; errorCode?: string } {
+  const defs = (el.eventDefinitions as ModdleElement[] | undefined) ?? [];
+  if (defs.length === 0) {
+    return { kind: "none" };
+  }
+  if (defs.length > 1) {
+    throw new ParseError(
+      `EndEvent ${el.id}: multiple eventDefinitions are not supported (got ${defs.length})`,
+    );
+  }
+  const def = defs[0]!;
+  switch (def.$type) {
+    case "bpmn:TerminateEventDefinition":
+      return { kind: "terminate" };
+    case "bpmn:ErrorEventDefinition": {
+      const ref = readRef(def.errorRef);
+      if (!ref) {
+        throw new ParseError(
+          `EndEvent ${el.id}: bpmn:errorEventDefinition is missing errorRef`,
+        );
+      }
+      const target = errorById.get(ref);
+      if (!target) {
+        throw new ParseError(
+          `EndEvent ${el.id}: errorRef "${ref}" does not resolve to a bpmn:Error declared at the definitions root`,
+        );
+      }
+      if (!target.errorCode) {
+        throw new ParseError(
+          `EndEvent ${el.id}: referenced bpmn:Error "${ref}" is missing @errorCode`,
+        );
+      }
+      return { kind: "error", errorCode: target.errorCode };
+    }
+    default:
+      throw new ParseError(
+        `EndEvent ${el.id}: ${def.$type} is not supported. Only Terminate and Error end events are supported in this version.`,
+      );
+  }
 }
 
 function readUserTaskExtensions(task: ModdleElement): {

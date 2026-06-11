@@ -1,20 +1,27 @@
 import type { Generated, JSONColumnType } from 'kysely';
 
 export type InstanceState = 'active' | 'completed' | 'terminated' | 'suspended';
-export type TokenState = 'active' | 'waiting' | 'completed' | 'incident';
+export type TokenState =
+  | 'active'
+  | 'waiting'
+  | 'completed'
+  | 'incident'
+  | 'cancelled';
 export type JobState =
   | 'pending'
   | 'active'
   | 'completed'
   | 'failed'
-  | 'incident';
+  | 'incident'
+  | 'cancelled';
 export type TimerType = 'duration' | 'date' | 'cycle';
 export type TimerStateValue = 'active' | 'fired' | 'cancelled';
 export type IncidentType =
   | 'job_retries_exhausted'
   | 'expression_error'
   | 'timer_error'
-  | 'unhandled_error';
+  | 'unhandled_error'
+  | 'error_end_event';
 export type IncidentStateValue = 'active' | 'resolved';
 
 export interface ProcessDefinitionsTable {

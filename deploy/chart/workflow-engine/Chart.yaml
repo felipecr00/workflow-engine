@@ -1,0 +1,6 @@
+apiVersion: v2
+name: workflow-engine
+description: BPMN workflow engine (Fastify + Postgres) — non-prod chart for GKE Autopilot
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

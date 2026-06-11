@@ -156,3 +156,16 @@ export async function cancelUserTask(
     .where("state", "in", ["created", "claimed"])
     .execute();
 }
+
+export async function cancelAllOpenUserTasksForInstance(
+  db: Kysely<Database>,
+  instanceId: string,
+): Promise<number> {
+  const result = await db
+    .updateTable("user_tasks")
+    .set({ state: "cancelled", updated_at: new Date() })
+    .where("instance_id", "=", instanceId)
+    .where("state", "in", ["created", "claimed"])
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows ?? 0);
+}

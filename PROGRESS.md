@@ -14,44 +14,41 @@ Registro acumulativo de sesiones de trabajo. **Más reciente primero.**
 
 ## Estado actual
 
-**Migración React** de `workflow-web` completa en rama `feat/react-migration`
-(no pusheada). El monolito `main.ts` (2304 líneas) fue reemplazado por ~25
-componentes React 18 + React Router 6 + TanStack Query 5. Las 7 vistas
-funcionan idénticas a la versión vanilla. Build limpio, cero errores en
-consola.
+**Sprint 3 de cobertura BPMN** cerrado en rama `feat/bpmn-coverage-sprint-3`
+(no pusheada). El parser ahora acepta 5 nuevos elementos BPMN sin cambios
+estructurales en el schema: **Terminate End Event**, **Error End Event**,
+**Manual Task**, **Send Task** e **Intermediate Throw Event (None)**.
+- Parser: EndEvent pasa a tener un discriminador interno `endEventKind`
+  (none/terminate/error). ManualTask y SendTask reusan tablas existentes
+  (`user_tasks` y `jobs`) — distinguidas por `element_type` y por audit
+  metadata.
+- Executor: nuevos handlers `terminateInstance`, `raiseErrorEnd`,
+  `enterManualTask`, `enterSendTask` y `stepIntermediateThrow`.
+  `completeServiceTask` y `completeUserTaskAction` aceptan los nuevos
+  tipos en sus guards.
+- Migraciones 006/007/008 (un archivo por `ALTER TYPE ADD VALUE`):
+  `token_state.cancelled`, `job_state.cancelled`,
+  `incident_type.error_end_event`.
+- Audit: 5 tipos nuevos (`JOB_CANCELLED`, `THROW_EVENT_NONE`,
+  `MANUAL_TASK_CREATED`, `MANUAL_TASK_COMPLETED`, `SEND_TASK_JOB_CREATED`)
+  + reuso de `INSTANCE_TERMINATED` (ya existía en el enum). Token cancelado
+  por Terminate emite `TOKEN_COMPLETED` con `metadata.cancelledBy`.
 
-### Arquitectura nueva (`workflow-web/src/`)
-- **Entry:** `main.tsx` — React 18 `createRoot`, `createBrowserRouter`
-  con `basename: '/modeler'`, `QueryClientProvider`.
-- **Layout:** `components/Layout.tsx` (header + NavLink tabs + Outlet +
-  StatusBar), `components/StatusBar.tsx`, `components/Badge.tsx`,
-  `components/Modal.tsx`.
-- **Pages:** `HomePage`, `ModelerPage`, `InstancesPage`,
-  `InstanceDetailPage`, `TasksPage` (con sub-componentes en `tasks/`),
-  `FormsListPage`, `FormEditorPage`, `IncidentsPage`.
-- **Hooks:** `useStatus` (context), `useBpmnModeler`, `useBpmnViewer`,
-  `useFormEditor` (imperative wrappers), `usePersistedState`
-  (localStorage).
-- **Utils:** `utils.ts` (helpers extraídos de main.ts).
-- **api.ts** y **default-diagram.ts** sin cambios funcionales (solo
-  se añadió `!res.ok` checks en list functions para compatibilidad
-  con TanStack Query v5).
-- **CSS** sin cambios; se añadió `#root` junto a `#app` en los
-  selectores de layout.
+**Migración React** de `workflow-web` mergeada en `main` (PR #3).
 
 ### Engine (`workflow-core/`)
-Sin cambios en esta sesión. Sprints 1 y 2 de Forms siguen en
-`feat/forms-sprint-1`.
+- 5 nuevos elementos BPMN soportados (ver arriba).
+- Suite: **91 verdes** + flakies pre-existentes inalterados (gateways
+  parallel join, restart-recovery pending job, incidents retry backoff).
 
 ## Pendientes inmediatos
 
-- [ ] Review y aprobación de la rama `feat/react-migration` para push/merge.
-- [ ] Smoke con backend corriendo para verificar flujos end-to-end
-      (Modeler con diagrama real, Instance Detail con tokens, Tasks
-      con form-js viewer, Forms con deploy).
-- [ ] Mergear `feat/forms-sprint-1` a `main` (pendiente de sesiones
-      anteriores).
-- [ ] Sprint 3 Forms — Picker en properties panel del modeler.
+- [ ] Review y aprobación de la rama `feat/bpmn-coverage-sprint-3`
+      para push/merge.
+- [ ] **Sprint 4**: Subprocess (embedded) y CallActivity.
+- [ ] Sprint 5: Message events / Receive Task.
+- [ ] Sprint 6: Boundary events (timer/error/message) + propagación
+      de Error End a boundary error catch.
 
 ## Tests flakies conocidos (pre-existentes)
 
@@ -63,6 +60,113 @@ Sin cambios en esta sesión. Sprints 1 y 2 de Forms siguen en
 ---
 
 ## Sesiones
+
+### 2026-06-09 — Sprint 3 BPMN coverage (Terminate / Error / Manual / Send / Throw)
+
+**Objetivo:** subir la cobertura BPMN agregando 5 elementos que hoy hacen
+fallar el deploy con `ParseError("Unsupported BPMN element ...")`,
+sin tocar el schema base.
+
+**Hecho:**
+- Tipos: `EndEventKind` discriminador (`none|terminate|error`),
+  `ManualTaskElement`, `SendTaskElement`, `IntermediateThrowEventElement`
+  + unions en
+  [parser/types.ts](workflow-core/src/engine/parser/types.ts).
+- Parser: `SUPPORTED_TYPES` ampliado, lookup `errorById` desde
+  `rootElements`, `readEndEventKind` con rechazos explícitos
+  (múltiples definitions, errorRef ausente, tipo no soportado),
+  rechazo de `IntermediateThrowEvent` con cualquier eventDefinition,
+  validación estructural para sendTask/manualTask/throw
+  ([parser.ts](workflow-core/src/engine/parser/parser.ts)).
+- Migraciones (3 archivos, uno por `ALTER TYPE ADD VALUE`):
+  [006_token_state_cancelled.sql](workflow-core/migrations/006_token_state_cancelled.sql),
+  [007_job_state_cancelled.sql](workflow-core/migrations/007_job_state_cancelled.sql),
+  [008_incident_type_error_end_event.sql](workflow-core/migrations/008_incident_type_error_end_event.sql).
+  `instance_state.terminated`, `timer_state.cancelled` y
+  `user_task_state.cancelled` ya existían — sólo se agregó lo faltante.
+- Repository helpers de cancelación bulk:
+  `cancelAllLiveTokensForInstance`
+  ([tokens.ts](workflow-core/src/engine/repository/tokens.ts)),
+  `cancelAllOpenJobsForInstance`
+  ([jobs.ts](workflow-core/src/engine/repository/jobs.ts)),
+  `cancelAllPendingTimersForInstance`
+  ([timers.ts](workflow-core/src/engine/repository/timers.ts)),
+  `cancelAllOpenUserTasksForInstance`
+  ([user-tasks.ts](workflow-core/src/engine/repository/user-tasks.ts)),
+  `markInstanceTerminated`
+  ([instances.ts](workflow-core/src/engine/repository/instances.ts)).
+- Executor: nuevo `stepEndEvent` con switch interno (`none` reutiliza
+  el path existente, `terminate` cancela bulk + audit, `error` crea
+  incident `error_end_event`); `enterSendTask` y `enterManualTask`;
+  `stepIntermediateThrow` (pass-through con audit `THROW_EVENT_NONE`);
+  `completeServiceTask` y `completeUserTaskAction` aceptan los
+  nuevos tipos
+  ([executor.ts](workflow-core/src/engine/execution/executor.ts)).
+- `engine.deploy` valida handlers para SendTask igual que ServiceTask
+  ([engine.ts](workflow-core/src/engine/engine.ts)).
+- Tests nuevos: 10 nuevos parser tests
+  ([parser.test.ts](workflow-core/tests/parser.test.ts)),
+  [terminate-end.test.ts](workflow-core/tests/terminate-end.test.ts) (3),
+  [error-end.test.ts](workflow-core/tests/error-end.test.ts) (2),
+  [manual-task.test.ts](workflow-core/tests/manual-task.test.ts) (3),
+  +2 tests en
+  [execution.test.ts](workflow-core/tests/execution.test.ts) (SendTask
+  end-to-end, IntermediateThrowEvent None).
+
+**Decisiones tomadas en sesión:**
+- EndEvent **un solo tipo con discriminador interno** (`endEventKind`),
+  no tres tipos separados — estructuralmente idénticos.
+- ManualTask y SendTask son **tipos propios** (no variantes de
+  UserTask/ServiceTask) pero **reusan storage** (`user_tasks`/`jobs`).
+  Razón: distinción semántica en BPMN, pero lifecycle idéntico.
+- ManualTask se completa por `POST /user-tasks/:id/complete` —
+  sin ioMapping ni form.
+- 3 migraciones separadas (una por `ALTER TYPE ADD VALUE`).
+  Razón: aunque PG16 permite ejecución dentro de transacción si el
+  valor no se usa en la misma, partir reduce blast radius si una falla.
+- Audit: **tipos dedicados** para `MANUAL_TASK_CREATED/COMPLETED` y
+  `SEND_TASK_JOB_CREATED` (queries más limpios). Para tokens cancelados
+  por Terminate **se reusa** `TOKEN_COMPLETED` con
+  `metadata.cancelledBy='terminate_end_event'` (evita proliferar tipos
+  cuando el estado fila ya lo dice). `JOB_CANCELLED` y
+  `THROW_EVENT_NONE` se agregaron porque no había equivalentes.
+- Error End Event en este sprint **sólo crea incident**, no propaga a
+  boundary catch (Sprint 6).
+- SendTask reusa el handler mechanism por `jobType` — los workers no
+  distinguen entre ServiceTask y SendTask.
+
+**Smoke manual (curl, DB recién migrada):**
+1. **Deploy MTT** (Manual → Throw → Terminate):
+   `POST /definitions` → `201 {id, key:"smoke-mtt", version:1}`.
+2. **Create instance** → `201 {state:"active"}`. `GET /user-tasks?instanceId=...`
+   muestra 1 fila con `element_id="Step1"`, `assignee:null`,
+   `form_key:null`, `candidate_groups:[]`.
+3. **Complete manual task** con `{signedOff:true}` →
+   `{ok:true}`. `GET /instances/:id` ahora muestra
+   `state:"terminated"`, `variables:{signedOff:true}`,
+   tokens `Start/Step1/Checkpoint:completed`, `TerminateEnd:cancelled`,
+   audit chain
+   `... MANUAL_TASK_CREATED → MANUAL_TASK_COMPLETED → TOKEN_COMPLETED →
+   THROW_EVENT_NONE → TOKEN_COMPLETED → INSTANCE_TERMINATED`.
+4. **Deploy Error End** (`smoke-error` con `bpmn:error` declarado
+   a nivel root y `errorCode="VALIDATION_FAILED"`) → `201`.
+5. **Create instance** → state queda `"active"`, token en `ErrEnd:incident`,
+   incident `type:"error_end_event"` con mensaje
+   `Error end event E raised: errorCode=VALIDATION_FAILED`, audit incluye
+   `INCIDENT_CREATED`.
+
+**Pendiente / bloqueos:**
+- Rama sin mergear, sin push. Esperando OK del usuario para abrir PR.
+- Sprint 4 (Subprocess + CallActivity) es el próximo.
+
+**Próximos pasos sugeridos:**
+- Mergear cuando confirmes el contenido de los commits.
+- Sprint 4: empezar por Subprocess embedded (sub-tokens en el mismo
+  proceso) — CallActivity requiere multi-process deployment, que
+  hoy está bloqueado por la validación de un único `bpmn:Process`
+  por deployment.
+
+---
 
 ### 2026-06-09 — Migración React de workflow-web
 
