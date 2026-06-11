@@ -17,8 +17,8 @@ spec:
       name: {{ include "workflow-engine.fullname" . }}
       port:
         number: {{ .Values.service.port }}
+  {{- if $host }}
   rules:
-    {{- if $host }}
     - host: {{ $host | quote }}
       http:
         paths:
@@ -29,5 +29,5 @@ spec:
                 name: {{ include "workflow-engine.fullname" . }}
                 port:
                   number: {{ .Values.service.port }}
-    {{- end }}
+  {{- end }}
 {{- end -}}

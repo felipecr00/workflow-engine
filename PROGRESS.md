@@ -49,6 +49,10 @@ estructurales en el schema: **Terminate End Event**, **Error End Event**,
 - [ ] Sprint 5: Message events / Receive Task.
 - [ ] Sprint 6: Boundary events (timer/error/message) + propagación
       de Error End a boundary error catch.
+- [ ] **Deploy GKE no-prod**: probar el chart en un cluster real (build
+      y push de la imagen a Artifact Registry, `helm install`, reservar
+      IP estática global `workflow-engine-ip`, validar que el bundle de
+      `workflow-web` se sirve desde `/` vía la Ingress nip.io).
 
 ## Tests flakies conocidos (pre-existentes)
 
@@ -60,6 +64,86 @@ estructurales en el schema: **Terminate End Event**, **Error End Event**,
 ---
 
 ## Sesiones
+
+### 2026-06-11 — Deploy scaffolding: Dockerfile + Helm chart (GKE Autopilot, no-prod)
+
+**Objetivo:** dejar listas las piezas para desplegar el motor en un cluster
+GKE Autopilot no-productivo: una sola imagen que sirve API + bundle web,
+Postgres in-cluster (StatefulSet), migraciones como hook de Helm, y acceso
+externo vía Ingress HTTP con host `nip.io` (sin DNS propio, sin TLS).
+
+**Hecho:**
+- [Dockerfile](Dockerfile) multi-stage (web-build → api-build → prod-deps → runtime).
+  Runtime sobre `node:20-bookworm-slim` con usuario no-root (`uid 1001`),
+  `WEB_DIST_DIR=/app/public` por defecto. El bundle de `workflow-web`
+  se copia a `/app/public` para que `app.ts:36` lo sirva sin variables.
+  Migraciones se exponen como segundo comando: `node dist/engine/db/cli-migrate.js`
+  — `cli-migrate.ts` ya está dentro de `src/**/*` así que `tsc` lo emite
+  con el resto, sin cambios en `tsconfig.json`.
+- [.dockerignore](.dockerignore) excluye `node_modules`, `dist`, `tests`,
+  `.git`, `deploy/`, `*.md` para builds rápidos y reproducibles.
+- Chart Helm en
+  [deploy/chart/workflow-engine/](deploy/chart/workflow-engine):
+  - `values.yaml` con defaults no-prod (1 réplica engine, Postgres
+    `5Gi standard-rwo`, recursos modestos para Autopilot).
+  - **Postgres**: `StatefulSet` + `Service` con probe `pg_isready`,
+    PVC por `volumeClaimTemplates`. Password generado con `randAlphaNum`
+    si `values.postgres.password` está vacío, **conservado en upgrades**
+    via `lookup` del Secret existente (no rota credenciales por accidente).
+  - **Engine**: `Deployment` con `envFrom: ConfigMap` + `DATABASE_URL`
+    desde `Secret`, probes a `/health`, init container `busybox` para
+    esperar Postgres, `securityContext` no-root con `readOnlyRootFilesystem`
+    y `emptyDir` en `/tmp`. Checksums de ConfigMap/Secret en annotations
+    para rollear el Deployment cuando cambian.
+  - **Migrate Job**: hook `pre-install,pre-upgrade` con
+    `hook-delete-policy: before-hook-creation,hook-succeeded`. Corre
+    `node dist/engine/db/cli-migrate.js` contra el mismo `DATABASE_URL`.
+  - **Ingress** clase `gce` + `BackendConfig` con health check a `/health`.
+    Helper `workflow-engine.ingressHost` computa el host como
+    `workflow.<ip-con-guiones>.nip.io` cuando se setea
+    `ingress.loadBalancerIP`. Sin host se renderiza solo `defaultBackend`
+    (no `rules: null`, que k8s rechazaría).
+- Validado con `helm lint` (0 errores) y `helm template` en dos
+  configuraciones: con y sin `loadBalancerIP`. Render produce 10
+  recursos en el primer caso, todos con nombres consistentes
+  (`<release>-workflow-engine-*`).
+
+**Cómo usar (resumen, en `templates/NOTES.txt` queda el detalle):**
+1. `gcloud artifacts repositories create workflow --repository-format=docker --location=us-central1`
+2. `docker build -t us-central1-docker.pkg.dev/$PROJECT/workflow/engine:$SHA .`
+   y `docker push`.
+3. `gcloud compute addresses create workflow-engine-ip --global` y
+   anotar la IP devuelta.
+4. `helm upgrade --install workflow-engine deploy/chart/workflow-engine \
+      --set image.repository=us-central1-docker.pkg.dev/$PROJECT/workflow/engine \
+      --set image.tag=$SHA \
+      --set ingress.loadBalancerIP=<IP>`.
+5. Esperar ~3-5 min a que el L7 LB de GKE se aprovisione. Acceder en
+   `http://workflow.<ip-con-guiones>.nip.io`.
+
+**No hecho (a propósito, fuera del alcance no-prod):**
+- Cloud SQL gestionado y conexión vía Cloud SQL Auth Proxy.
+- Workload Identity (no necesario sin APIs GCP desde el pod).
+- TLS / `ManagedCertificate` (requiere dominio propio).
+- HPA, PDB, `topologySpreadConstraints` — single replica.
+- CI/CD (`cloudbuild.yaml` o GitHub Actions). Hoy es `docker build && helm`
+  a mano.
+- NetworkPolicy entre engine y Postgres.
+
+**Decisiones a futuro:** cuando se mueva a un entorno donde la data
+importe, lo que cambia es Postgres (a Cloud SQL + sidecar proxy) y la
+exposición (Ingress con cert gestionado + dominio real). El chart está
+estructurado para que ambos sean cambios localizados en `values.yaml`
+y un par de templates nuevos, no una reescritura.
+
+**Verificación:**
+- `helm lint deploy/chart/workflow-engine` → 0 errores.
+- `helm template … --set ingress.loadBalancerIP=34.120.1.2` → 10 recursos
+  (`ServiceAccount`, `Secret`, `ConfigMap`, `Service ×2`, `Deployment`,
+  `StatefulSet`, `Ingress`, `BackendConfig`, `Job`). Host de Ingress
+  rendea correctamente como `workflow.34-120-1-2.nip.io`.
+- No corrí `npm run typecheck` / `npm test` porque la sesión no tocó
+  código del motor — sólo Dockerfile y manifests.
 
 ### 2026-06-09 — Sprint 3 BPMN coverage (Terminate / Error / Manual / Send / Throw)
 
